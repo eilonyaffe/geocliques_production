@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Top Section: Welcome + Image (left aligned) -->
+<div style="min-height: 70vh; padding-top: 60px; padding-left: 60px; padding-bottom: 10px; text-align: left;">
+  <div class="landing-title" style="display: flex; align-items: center; gap: 20px;">
+  <h1 style="margin: 0;">Welcome to</h1>
+  <img src="{{ url_for('static', filename='files/gc_landing_page_pic.png') }}"
+       alt="Geo Cliques"
+       style="height: 250px;">
+  </div>
+
+  <h2 class="landing-subtitle">
+    A map-based social media, helping people with similar interests to share their favorite spots
+  </h2>
+
+  <ul style="margin-top: 20px; list-style-type: disc; padding-left: 40px;">
+    <li><h3 class="landing-bullet">Share recommendations with friends, co-workers, and people around the globe</h3></li>
+    <li><h3 class="landing-bullet">Discover places shared by members from your communities</h3></li>
+    <li><h3 class="landing-bullet">Create your own cliques, invite friends, and manage the clique as you see fit</h3></li>
+  </ul>
+</div>
+
+<!-- Bottom Dark Scrollable Row -->
+<div style="
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  width: 100vw;
+  overflow-x: hidden;
+  padding: 40px 0;
+  box-sizing: border-box;
+">
+  <h4 style="color: white; text-align: left; margin-bottom: 30px; padding-left: 60px;">
+    Powered by:
+  </h4>
+
+  <div class="powered-box-container">
+    {% set tech_links = {
+      'python': 'https://www.python.org/',
+      'javascript': 'https://developer.mozilla.org/en-US/docs/Web/JavaScript',
+      'html5': 'https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/HTML5',
+      'css3': 'https://developer.mozilla.org/en-US/docs/Web/CSS',
+      'flask': 'https://flask.palletsprojects.com/',
+      'sqlalchemy': 'https://www.sqlalchemy.org/',
+      'leaflet': 'https://leafletjs.com/',
+      'bootstrap': 'https://getbootstrap.com/'
+    } %}
+    {% for tech in ['python', 'javascript', 'html5', 'css3', 'flask', 'sqlalchemy', 'leaflet', 'bootstrap'] %}
+      <a href="{{ tech_links[tech] }}" target="_blank" rel="noopener noreferrer">
+        <div class="powered-box">
+          <img src="{{ url_for('static', filename='files/logos/' + tech + '.svg') }}" alt="{{ tech }}">
+        </div>
+      </a>
+  {% endfor %}
+  </div>
+
+
+</div>
+
+{% endblock %}

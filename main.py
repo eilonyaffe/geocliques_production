@@ -1,0 +1,1962 @@
+from flask import Flask, jsonify, render_template, request, url_for, redirect, flash, session
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import login_user, LoginManager, login_required, current_user, logout_user
+from rapidfuzz import fuzz
+import os
+from datetime import datetime, date, timedelta
+from collections import Counter
+
+from databases import db, User, Marker, Clique, UserMarker, CliqueUser, Review, Notification, Event, BannedUser
+
+from utils import get_unique_color, allowed_file, is_valid_password, is_valid_email, delete_user, delete_review, \
+    delete_clique, delete_user_from_clique, delete_clique_and_contents
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret-key-goes-here'  # must-have placeholder, can be altered in production
+app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
+
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+db.init_app(app)
+
+# Flask-Login setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.get_or_404(User, user_id)
+
+
+@app.before_request
+def delete_expired_events():
+    # only run the deletion logic for specific route requests involving events
+    if request.endpoint in ['maptest', 'add_event', 'get_user_markers', 'edit_event']:
+        today = date.today()
+
+        # delete events with a date strictly before today
+        expired_events = Event.query.filter(Event.date < today).all()
+
+        for event in expired_events:
+            db.session.delete(event)
+
+        db.session.commit()
+
+
+# MAP FUNCTIONS
+""" functions relating to displaying and interacting with the Leaflet map"""
+@app.route('/maptest')
+@login_required
+def maptest():
+    if current_user.email == "adminadmin@gmail.com":
+        return render_template("master/masterbase.html", name=current_user.name, logged_in=True)
+    selected_layer = session.get('selected_layer', 'default')
+    return render_template("user/maptest.html", name=current_user.name, logged_in=True, selected_layer=selected_layer)
+
+
+# fetch markers in GeoJSON format route
+@app.route('/geojson-features', methods=['GET'])
+@login_required
+def get_user_markers():
+    # extract current user markers from database
+    user_clique_ids = {cu.clique_id for cu in current_user.cliques}
+    user_markers = UserMarker.query.filter(UserMarker.clique_id.in_(user_clique_ids)).all()
+
+    features = []
+    for um in user_markers:
+        marker = um.marker
+        clique = db.session.get(Clique, um.clique_id)
+
+        # extract current user reviews (if any)
+        review = Review.query.filter_by(marker_id=marker.id, user_id=current_user.id).first()
+        user_review = None
+        if review:
+            user_review = {
+                "stars": review.stars,
+                "commentary": review.commentary
+            }
+
+        # extract all other reviews
+        all_reviews = Review.query.filter(Review.marker_id == marker.id, Review.user_id != current_user.id).all()
+        other_reviews = [
+            {
+                "stars": r.stars,
+                "commentary": r.commentary,
+                "user": db.session.get(User, r.user_id).name,
+                "user_pic": db.session.get(User, r.user_id).picture
+            }
+            for r in all_reviews
+        ]
+
+        # extract current user events (if any)
+        all_user_events = Event.query.filter_by(marker_id=marker.id, user_id=current_user.id).all()
+        user_events = [
+            {
+                "date": e.date,
+                "time": e.time,
+                "description": e.description
+            }
+            for e in all_user_events
+        ]
+
+        # extract all other events
+        all_events = Event.query.filter(Event.marker_id == marker.id, Event.user_id != current_user.id).all()
+        other_events = [
+            {
+                "date": e.date,
+                "time": e.time,
+                "description": e.description,
+                "user": db.session.get(User, e.user_id).name,
+                "user_pic": db.session.get(User, e.user_id).picture
+            }
+            for e in all_events
+        ]
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [marker.long, marker.lat]
+            },
+            "properties": {
+                "description": marker.description or "No description",
+                "marker_id": marker.id,
+                "average_review": marker.average_review,
+                "total_reviews": marker.total_reviews,
+                "user_review": user_review,
+                "reviews": other_reviews,
+                "user_events": user_events,
+                "events": other_events,
+                "clique_id": um.clique_id,
+                "clique_color": clique.markers_color,
+                "icon": clique.icon
+            }
+        })
+
+    return jsonify(features)
+
+
+@app.route('/clique-geojson/<int:clique_id>', methods=['GET'])
+@login_required
+def get_clique_markers(clique_id):
+    if current_user.email != "adminadmin@gmail.com":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    user_markers = UserMarker.query.filter_by(clique_id=clique_id).all()
+
+    features = []
+    for um in user_markers:
+        marker = um.marker
+        all_reviews = Review.query.filter_by(marker_id=marker.id).all()
+        review_data = [{
+            "user": db.session.get(User, r.user_id).name,
+            "stars": r.stars,
+            "commentary": r.commentary or ""
+        } for r in all_reviews]
+
+        all_events = Event.query.filter_by(marker_id=marker.id).all()
+        events_data = [{
+            "user": db.session.get(User, e.user_id).name,
+            "date": e.date,
+            "time": e.time,
+            "description": e.description
+        } for e in all_events]
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [marker.long, marker.lat]
+            },
+            "properties": {
+                "marker_title": marker.description or "Untitled Marker",
+                "average_review": marker.average_review,
+                "total_reviews": marker.total_reviews,
+                "reviews": review_data,
+                "events": events_data
+            }
+        })
+
+    return jsonify(features)
+
+
+@app.route('/add-marker', methods=['POST'])
+@login_required
+def add_marker():
+    try:
+        data = request.get_json()
+        latitude = data['latitude']
+        longitude = data['longitude']
+        title = data.get('title', '')
+        commentary = data.get('commentary', '')
+        rating = int(data.get('rating'))
+        if not title or not commentary or not (1 <= rating <= 5):
+            return jsonify({"success": False, "message": "All fields (title, rating, commentary) are required."}), 400
+
+        clique_id = int(data.get('clique_id'))
+
+        rating = int(data.get('rating'))
+        if rating < 1 or rating > 5:
+            return jsonify({"success": False, "message": "Invalid rating value."}), 400
+
+        user_clique_ids = [cu.clique_id for cu in current_user.cliques]
+        if clique_id not in user_clique_ids:
+            return jsonify({"success": False, "message": "You are not a member of this clique."}), 403
+
+        new_marker = Marker(lat=latitude, long=longitude, description=title, total_reviews=1,
+                            average_review=float(rating))
+
+        db.session.add(new_marker)
+        db.session.flush()  # get marker.id before commit
+
+        # create UserMarker link
+        user_marker = UserMarker(
+            user_id=current_user.id,
+            marker_id=new_marker.id,
+            clique_id=clique_id,
+            creation_date=datetime.today().strftime('%Y-%m-%d')
+        )
+        db.session.add(user_marker)
+
+        # create first review
+        new_review = Review(
+            stars=rating,
+            commentary=commentary,
+            marker_id=new_marker.id,
+            user_id=current_user.id,
+            creation_date=datetime.today().strftime('%Y-%m-%d')
+        )
+        db.session.add(new_review)
+
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Marker added successfully!"}), 201
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/edit-review/<int:marker_id>', methods=['GET'])
+@login_required
+def edit_review(marker_id):
+    review = Review.query.filter_by(marker_id=marker_id, user_id=current_user.id).first_or_404()
+    marker = review.marker
+    is_only_review = marker.total_reviews == 1
+    return render_template('user/edit_review.html', review=review, marker=marker, is_only_review=is_only_review,
+                           logged_in=True, name=current_user.name)
+
+
+@app.route('/update-review/<int:marker_id>', methods=['POST'])
+@login_required
+def update_review(marker_id):
+    review = Review.query.filter_by(marker_id=marker_id, user_id=current_user.id).first_or_404()
+    marker = review.marker
+    action = request.form.get("action")
+
+    if action == "delete":
+        if marker.total_reviews == 1:
+            UserMarker.query.filter_by(marker_id=marker.id).delete()
+            db.session.delete(review)
+            db.session.delete(marker)
+        else:
+            marker.total_reviews -= 1
+            marker.average_review = round(
+                ((marker.average_review * (marker.total_reviews + 1)) - review.stars) / marker.total_reviews, 2)
+            db.session.delete(review)
+        db.session.commit()
+        flash("Review deleted.", "success")
+        return redirect(url_for('maptest'))
+
+    new_stars = int(request.form.get("stars"))
+    new_comment = request.form.get("commentary", "").strip()
+
+    # update marker average and total
+    total = marker.total_reviews
+    new_avg = ((marker.average_review * total) - review.stars + new_stars) / total
+    marker.average_review = round(new_avg, 2)
+
+    review.stars = new_stars
+    review.commentary = new_comment
+    db.session.commit()
+    flash("Review updated.", "success")
+    return redirect(url_for('maptest'))
+
+
+@app.route('/rate-marker/<int:marker_id>', methods=['POST'])
+@login_required
+def rate_marker(marker_id):
+    marker = Marker.query.get_or_404(marker_id)
+    data = request.get_json()
+    stars = int(data.get('rating'))
+    commentary = data.get('commentary', '').strip()
+
+    if not (1 <= stars <= 5):
+        return jsonify({"success": False, "message": "Star rating is required."}), 400
+
+    existing_review = Review.query.filter_by(marker_id=marker_id, user_id=current_user.id).first()
+    if existing_review:
+        return jsonify({"success": False, "message": "You have already reviewed this marker."}), 400
+
+    # update marker average and total
+    new_avg = ((marker.average_review * marker.total_reviews) + stars) / (marker.total_reviews + 1)
+    marker.total_reviews += 1
+    marker.average_review = round(new_avg, 2)
+
+    review = Review(
+        stars=stars,
+        commentary=commentary,
+        marker_id=marker_id,
+        user_id=current_user.id,
+        creation_date=datetime.today().strftime('%Y-%m-%d')
+    )
+    db.session.add(review)
+    db.session.commit()
+
+    return jsonify({"success": True, "message": "Review added!"})
+
+
+@app.route('/select-layer', methods=['GET', 'POST'])
+@login_required
+def select_layer():
+    if request.method == 'POST':
+        selected_layer = request.form.get('layer')
+        session['selected_layer'] = selected_layer
+        return redirect(url_for('maptest'))
+
+    selected_layer = session.get('selected_layer', 'default')
+
+    layers = [
+        ("default", "default"),
+        ("OpenStreetMap.HOT", "alternative"),
+        ("Esri.WorldImagery", "satellite"),
+        ("Thunderforest.Transport", "public transport routes and lines"),
+        ("Thunderforest.OpenCycleMap", "bicycle lanes"),
+        ("Thunderforest.Outdoors", "Outdoors")
+    ]
+
+    return render_template("user/select_layer.html", layers=layers, selected_layer=selected_layer,
+                           name=current_user.name, logged_in=True)
+
+
+@app.route('/add-event/<int:marker_id>/<int:clique_id>', methods=['GET', 'POST'])
+@login_required
+def add_event(marker_id, clique_id):
+    if request.method == "POST":
+        date = request.form.get("date")
+        time = request.form.get("time")
+        description = request.form.get("description")
+
+        if not date or not time or not description:
+            flash("All fields are required.", "danger")
+            return redirect(url_for("add_event"))
+
+        new_event = Event(
+            date=date,
+            time=time,
+            description=description,
+            marker_id=marker_id,
+            clique_id=clique_id,
+            user_id=current_user.id
+        )
+
+        db.session.add(new_event)
+        db.session.commit()
+
+        flash("New event created successfully!", "success")
+        return redirect(url_for('maptest'))
+
+    return render_template('user/add_event.html', marker_id=marker_id, clique_id=clique_id, logged_in=True,
+                           name=current_user.name)
+
+
+@app.route('/edit-events/<int:marker_id>/<int:clique_id>', methods=['GET'])
+@login_required
+def edit_event(marker_id, clique_id):
+    all_user_events = Event.query.filter(Event.marker_id == marker_id, Event.user_id == current_user.id,
+                                         Event.clique_id == clique_id).all()
+    return render_template('user/edit_events.html', events=all_user_events, logged_in=True,
+                           name=current_user.name)
+
+
+@app.route('/update-event/<int:event_id>', methods=['POST'])
+@login_required
+def update_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    action = request.form.get("action")
+
+    if request.method == 'POST':
+
+        if action == "delete":
+            db.session.delete(event)
+            db.session.commit()
+            flash("Event deleted.", "success")
+
+            if current_user.email == "adminadmin@gmail.com":
+                return redirect(url_for('cliques'))
+
+            return redirect(url_for('maptest'))
+
+        else:
+            event_date = request.form['date']
+            event_time = request.form['time']
+            event_description = request.form['description']
+
+            event.date = event_date
+            event.time = event_time
+            event.description = event_description
+
+            db.session.commit()
+            flash("Event updated.", "success")
+            return redirect(url_for('maptest'))
+
+
+@app.route('/update-icon/<int:clique_id>', methods=['POST'])
+@login_required
+def update_icon(clique_id):
+    clique = Clique.query.get_or_404(clique_id)
+
+    if request.method == 'POST':
+        new_icon = request.form.get("selectedIcon")
+        clique.icon = new_icon
+
+        db.session.commit()
+        flash("Icon updated.", "success")
+
+        return redirect(url_for('maptest'))
+
+
+# USER FUNCTIONS
+""" functions relating to registration, login, account, and user-specific actions"""
+@app.route('/')
+def home():
+    return render_template("index.html", logged_in=current_user.is_authenticated, show_auth_links=True)
+
+
+@app.route('/register', methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        email = request.form.get('email')
+        password = request.form.get('password')
+        name = request.form.get('name')
+
+        if not is_valid_email(email):
+            flash("Invalid email format! Please enter a valid email.", "danger")
+            return redirect(url_for('register'))
+
+        if not is_valid_password(password):
+            flash(
+                "Password must be at least 8 characters long, include an uppercase letter, a digit, and a special "
+                "character.", "danger")
+            return redirect(url_for('register'))
+
+        result = db.session.execute(db.select(User).where(User.email == email))
+        user = result.scalar()
+        if user:
+            flash("You've already signed up with that email, log in instead!", "danger")
+            return redirect(url_for('login'))
+
+        hash_and_salted_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
+        new_user = User(email=email, password=hash_and_salted_password, name=name)
+
+        db.session.add(new_user)
+        db.session.commit()
+        login_user(new_user)
+        return redirect(url_for("maptest"))
+
+    return render_template("register.html", logged_in=current_user.is_authenticated)
+
+
+@app.route('/login', methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get('email')
+        password = request.form.get('password')
+
+        result = db.session.execute(db.select(User).where(User.email == email))
+        user = result.scalar()
+        if not user:
+            flash("That email does not exist, please try again.", "danger")
+            return redirect(url_for('login'))
+        elif not check_password_hash(user.password, password):
+            flash('Password incorrect, please try again.', "danger")
+            return redirect(url_for('login'))
+        else:
+            login_user(user)
+            if user.email == "adminadmin@gmail.com":
+                return redirect(url_for('cliques'))
+            return redirect(url_for('maptest'))
+
+    return render_template("login.html", logged_in=current_user.is_authenticated)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    db.session.close()
+    logout_user()
+    return redirect(url_for('home'))
+
+
+@app.route('/settings')
+@login_required
+def settings():
+    user_clique_links = CliqueUser.query.filter_by(user_id=current_user.id).all()
+    user_cliques = []
+
+    for link in user_clique_links:
+        clique = db.session.get(Clique, link.clique_id)
+        status = "admin" if clique.admin_id == current_user.id else "user"
+
+        marker_ids = [um.marker_id for um in UserMarker.query.filter_by(clique_id=clique.id).all()]
+        total_markers = len(set(marker_ids))
+        user_reviews_in_clique = Review.query.filter(
+            Review.marker_id.in_(marker_ids),
+            Review.user_id == current_user.id
+        ).count()
+
+        user_cliques.append({
+            "id": clique.id,
+            "name": clique.name,
+            "description": clique.description,
+            "status": status,
+            "visibility": clique.visibility,
+            "reviews_added": f"{user_reviews_in_clique}/{total_markers}",
+        })
+
+    all_reviews = Review.query.filter_by(user_id=current_user.id).all()
+    reviews_data = []
+    for r in all_reviews:
+
+        any_marker_link = UserMarker.query.filter_by(marker_id=r.marker_id).first()
+        clique = db.session.get(Clique, any_marker_link.clique_id) if any_marker_link else None
+        if clique:
+            reviews_data.append({
+                "review_id": r.id,
+                "marker_id": r.marker_id,
+                "clique_name": clique.name,
+                "marker_name": r.marker.description,
+                "commentary": r.commentary,
+                "stars": r.stars,
+            })
+
+    all_events = Event.query.filter_by(user_id=current_user.id).all()
+    events_data = []
+
+    # get clique and marker info to each event object
+    for e in all_events:
+        e.marker = db.session.get(Marker, e.marker_id)
+        e.clique = db.session.get(Clique, e.clique_id)
+
+        events_data.append({
+            "event_id": e.id,
+            "marker_id": e.marker_id,
+            "clique_name": e.clique.name,
+            "marker_name": e.marker.description,
+            "date": e.date,
+            "time": e.time,
+            "description": e.description,
+        })
+
+    return render_template(
+        "user/settings.html",
+        name=current_user.name,
+        cliques=user_cliques,
+        reviews=reviews_data,
+        events=events_data,
+        logged_in=True
+    )
+
+
+@app.route('/delete-review/<int:review_id>', methods=['POST'])
+@login_required
+def delete_review_route(review_id):
+    review = db.session.get(Review, review_id)
+    if not review or review.user_id != current_user.id:
+        flash("Unauthorized or missing review.", "danger")
+        return redirect(url_for('settings'))
+
+    delete_review(review_id, current_user.id)
+    db.session.commit()
+    flash("Review deleted.", "success")
+    return redirect(url_for('settings'))
+
+
+@app.route('/check_review_solo/<int:review_id>')
+@login_required
+def check_review_solo(review_id):
+    review = Review.query.get_or_404(review_id)
+    marker = review.marker
+    return jsonify({"is_only": len(marker.reviews) == 1})
+
+
+@app.route('/user_edit_user', methods=['GET'])
+@login_required
+def user_edit_user():
+    return render_template("user/user_edit_user.html", name=current_user.name, logged_in=True)
+
+
+@app.route('/update_user', methods=['POST'])
+@login_required
+def update_user():
+    new_name = request.form.get("name")
+    new_email = request.form.get("email")
+
+    if not is_valid_email(new_email):
+        flash("Invalid email format! Please enter a valid email.", "danger")
+        return redirect(url_for("user_edit_user"))
+
+        # ensure email uniqueness
+    existing_user = User.query.filter(User.email == new_email, User.id != current_user.id).first()
+    if existing_user:
+        flash("Email already exists! Try another one.", "danger")
+        return redirect(url_for("user_edit_user"))
+
+    current_user.name = new_name
+    current_user.email = new_email
+    db.session.commit()
+
+    # no flash message for success
+    return redirect(url_for("settings"))
+
+
+@app.route('/change_password', methods=['GET'])
+@login_required
+def change_password():
+    return render_template("user/change_password.html", name=current_user.name, logged_in=True)
+
+
+@app.route('/update_password', methods=['POST'])
+@login_required
+def update_password():
+    new_password = request.form.get("password")
+
+    if not is_valid_password(new_password):
+        flash(
+            "Invalid password format! Password must be at least 8 characters long, include an uppercase letter, "
+            "a digit, and a special character.",
+            "danger")
+        return redirect(url_for("change_password"))
+
+    current_user.password = generate_password_hash(new_password, method='pbkdf2:sha256', salt_length=8)
+    db.session.commit()
+
+    # no flash message for success
+    return redirect(url_for("settings"))
+
+
+@app.route('/manage_account', methods=['GET'])
+@login_required
+def manage_account():
+    return render_template("user/manage_account.html", name=current_user.name, logged_in=True,
+                           user_password=current_user.password)
+
+
+@app.route('/verify-password', methods=['POST'])
+@login_required
+def verify_password():
+    data = request.get_json()
+    password = data.get('password')
+
+    if check_password_hash(current_user.password, password):
+        return jsonify(valid=True)
+    else:
+        return jsonify(valid=False)
+
+
+@app.route('/update-profile-pic/<int:user_id>', methods=['POST'])
+@login_required
+def update_profile_pic(user_id):
+    user = User.query.get_or_404(user_id)
+    action = request.form.get("action")
+
+    if action == "edit":
+        file = request.files.get('profile_photo')
+
+        if not file or file.filename == '':
+            flash('No file selected.', 'warning')
+            return redirect(request.referrer)
+
+        if not allowed_file(file.filename):
+            flash('File type not allowed.', 'danger')
+            return redirect(request.referrer)
+
+        # delete old photo if not default
+        if user.picture != 'default.jpg':
+            old_path = os.path.join(app.root_path, 'static', 'uploads', user.picture)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        unique_filename = f"{user.id}_{int(datetime.now().timestamp())}.{ext}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+
+        file.save(filepath)
+
+        user.picture = unique_filename
+        db.session.commit()
+
+        flash('Profile photo updated!', 'success')
+        return redirect(url_for('settings'))
+
+    if action == "delete":
+        if user.picture != 'default.jpg':
+            old_path = os.path.join(app.root_path, 'static', 'uploads', user.picture)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        user.picture = 'default.jpg'
+        db.session.commit()
+
+        flash('Profile photo deleted!', 'success')
+        return redirect(url_for('settings'))
+
+
+# CLIQUE FUNCTIONS
+""" functions relating to creating, searching, joining, and leaving cliques"""
+@app.route('/feed')
+@login_required
+def feed():
+    user_clique_links = CliqueUser.query.filter_by(user_id=current_user.id).all()
+    user_clique_ids = [link.clique_id for link in user_clique_links]
+
+    user_cliques = []
+    for link in user_clique_links:
+        clique = db.session.get(Clique, link.clique_id)
+        user_cliques.append({
+            "id": clique.id,
+            "name": clique.name,
+            "description": clique.description,
+            "status": "admin" if clique.admin_id == current_user.id else "user",
+            "visibility": clique.visibility
+        })
+
+    week_ago = (datetime.today() - timedelta(days=7)).strftime('%Y-%m-%d')
+
+    recent_markers = UserMarker.query.filter(
+        UserMarker.clique_id.in_(user_clique_ids),
+        UserMarker.creation_date >= week_ago
+    ).all()
+
+    marker_updates = []
+    for um in recent_markers:
+        creator = db.session.get(User, um.user_id)
+        marker_updates.append({
+            "type": "marker",
+            "date": um.creation_date,
+            "clique_name": db.session.get(Clique, um.clique_id).name,
+            "marker_name": um.marker.description or "Unnamed Marker",
+            "description": um.marker.description or "",
+            "user_name": creator.name,
+            "user_pic": creator.picture
+        })
+
+    marker_ids = [um.marker_id for um in recent_markers]
+    recent_reviews = Review.query.filter(
+        Review.creation_date >= week_ago,
+        Review.marker_id.in_(marker_ids)
+    ).all()
+
+    review_updates = []
+    for r in recent_reviews:
+        marker = db.session.get(Marker, r.marker_id)
+        any_link = UserMarker.query.filter_by(marker_id=r.marker_id).first()
+        if not any_link:
+            continue
+        clique = db.session.get(Clique, any_link.clique_id)
+        creator = db.session.get(User, r.user_id)
+
+        review_updates.append({
+            "type": "review",
+            "date": r.creation_date,
+            "clique_name": clique.name,
+            "marker_name": marker.description or "Unnamed Marker",
+            "stars": r.stars,
+            "commentary": r.commentary,
+            "user_name": creator.name,
+            "user_pic": creator.picture
+        })
+
+    all_updates = marker_updates + review_updates
+    all_updates.sort(key=lambda x: x["date"], reverse=True)  # most recent to oldest
+    all_updates = all_updates[:20]
+
+    scoreboard_data = []
+
+    for link in user_clique_links:
+        clique_id = link.clique_id
+        clique = db.session.get(Clique, clique_id)
+        members = CliqueUser.query.filter_by(clique_id=clique_id).all()
+        scores = {}
+
+        for member in members:
+            user = db.session.get(User, member.user_id)
+            user_score = 0
+
+            # Reviews
+            marker_ids = [um.marker_id for um in UserMarker.query.filter_by(clique_id=clique_id).all()]
+            reviews = Review.query.filter(
+                Review.user_id == user.id,
+                Review.marker_id.in_(marker_ids)
+            ).all()
+
+            for r in reviews:
+                word_count = len(r.commentary.strip().split()) if r.commentary else 0
+                if word_count <= 3 or word_count > 40:
+                    user_score += 1
+                elif word_count <= 7 or word_count > 35:
+                    user_score += 2
+                elif word_count <= 10 or word_count > 30:
+                    user_score += 3
+                elif word_count <= 15 or word_count > 25:
+                    user_score += 4
+                elif word_count <= 25:
+                    user_score += 5
+
+            # Markers (each marker gives +2)
+            marker_count = UserMarker.query.filter_by(clique_id=clique_id, user_id=user.id).count()
+            user_score += marker_count * 2
+
+            scores[user.id] = (user_score, user.name)
+
+        # Sort by score descending
+        sorted_users = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
+        ranking = [
+            {"rank": i + 1, "user_id": uid, "name": scores[uid][1]}
+            for i, (uid, _) in enumerate(sorted_users)
+        ]
+
+        scoreboard_data.append({
+            "clique_name": clique.name,
+            "ranking": ranking
+        })
+
+    return render_template(
+        "user/feed.html",
+        name=current_user.name,
+        logged_in=True,
+        cliques=user_cliques,
+        updates=all_updates,
+        scoreboards=scoreboard_data
+    )
+
+
+@app.route('/create-clique', methods=["GET", "POST"])
+@login_required
+def create_clique():
+    if request.method == "POST":
+        name = request.form.get("name")
+        description = request.form.get("description")
+        visibility = request.form.get("visibility")
+        icon = request.form.get("selectedIcon")
+
+        if not name:
+            flash("Clique name is required.", "danger")
+            return redirect(url_for("create_clique"))
+
+        new_clique = Clique(
+            name=name,
+            description=description,
+            visibility=visibility,
+            markers_color=get_unique_color(),
+            icon=icon,
+            date_created=datetime.today().strftime('%Y-%m-%d'),
+            admin_id=current_user.id
+        )
+        db.session.add(new_clique)
+        db.session.flush()  # get clique.id before commit
+
+        # create CliqueUser link
+        membership = CliqueUser(
+            user_id=current_user.id,
+            clique_id=new_clique.id,
+            joined_date=datetime.today().strftime('%Y-%m-%d')
+        )
+        db.session.add(membership)
+        db.session.commit()
+
+        flash("New clique created successfully!", "success")
+        return redirect(url_for('maptest'))
+
+    return render_template("user/create_clique.html", name=current_user.name, logged_in=True)
+
+
+@app.route('/send_invite', methods=['POST'])
+@login_required
+def send_invite():
+    data = request.get_json()
+    email = data.get("email")
+    clique_id = int(data.get("clique_id"))
+
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
+
+    invitee = User.query.filter_by(email=email).first()
+    if not invitee:
+        return jsonify({"success": False, "message": "No user found with that email."}), 404
+
+    if invitee.id == current_user.id:
+        return jsonify({"success": False, "message": "You cannot invite yourself."}), 400
+
+    already_in_clique = CliqueUser.query.filter_by(user_id=invitee.id, clique_id=clique_id).first()
+    if already_in_clique:
+        return jsonify({"success": False, "message": "The user you invited is already in this clique."}), 400
+
+    # determine notification type
+    clique = Clique.query.get_or_404(clique_id)
+    is_admin = clique.admin_id == current_user.id
+    is_protected = clique.visibility == "Protected"
+    if is_admin and is_protected:
+        notif_type = "invitation admin"
+    elif is_protected:
+        notif_type = "invitation protected"
+    else:
+        notif_type = "invitation"
+
+    # check for existing invite
+    existing = Notification.query.filter_by(user_id=invitee.id, clique_id=clique_id).first()
+
+    if existing:
+        if existing.type == "invitation admin":
+            return jsonify({"success": False, "message": "This user has already been invited by an admin."}), 400
+        elif existing.type == "invitation" and notif_type == "invitation admin":
+            # upgrade existing type to admin invitation
+            existing.type = "invitation admin"
+            db.session.commit()
+            return jsonify({"success": True, "message": "Upgraded invitation to admin invitation."})
+        else:
+            return jsonify({"success": False, "message": "This user has already been invited to this clique."}), 400
+
+    # create new invite notification
+    new_notification = Notification(
+        type=notif_type,
+        user_id=invitee.id,
+        clique_id=clique_id
+    )
+    db.session.add(new_notification)
+    db.session.commit()
+
+    return jsonify({"success": True, "message": f"Invitation sent successfully as '{notif_type}'!"})
+
+
+@app.route('/join_clique/<int:clique_id>', methods=['POST'])
+@login_required
+def join_clique(clique_id):
+    banned = db.session.query(BannedUser).filter_by(user_id=current_user.id, clique_id=clique_id).first()
+    if banned:
+        return jsonify({"success": False, "message": "You are banned from this clique and cannot rejoin."})
+
+    existing = CliqueUser.query.filter_by(clique_id=clique_id, user_id=current_user.id).first()
+    if existing:
+        return jsonify({"success": False, "message": "You're already a member of this clique."})
+
+    new_link = CliqueUser(
+        user_id=current_user.id,
+        clique_id=clique_id,
+        joined_date=datetime.today().strftime('%Y-%m-%d')
+    )
+    db.session.add(new_link)
+    db.session.commit()
+
+    return jsonify({"success": True, "message": "Successfully joined the clique!"})
+
+
+@app.route('/leave_clique/<int:clique_id>', methods=['POST'])
+@login_required
+def leave_clique(clique_id):
+    clique = Clique.query.get_or_404(clique_id)
+
+    if clique.admin_id == current_user.id:
+        flash("You cannot leave a clique you administer.", "danger")
+        return redirect(url_for('settings'))
+
+    link = CliqueUser.query.filter_by(user_id=current_user.id, clique_id=clique_id).first()
+    if link:
+        user_events_in_clique = Event.query.filter(Event.user_id == current_user.id, Event.clique_id == clique_id).all()
+        for event in user_events_in_clique:
+            db.session.delete(event)
+
+        db.session.delete(link)
+        db.session.commit()
+        flash(f"You have left the clique '{clique.name}'.", "success")
+    else:
+        flash("You are not part of this clique.", "warning")
+
+    return redirect(url_for('settings'))
+
+
+@app.route('/search_cliques')
+@login_required
+def search_cliques():
+    query = request.args.get("query", "").strip().lower()
+
+    if not query:
+        flash("Please enter a search query.", "warning")
+        return redirect(url_for('feed'))
+
+    visible_cliques = Clique.query.filter(Clique.visibility.in_(["Public", "Protected"])).all()
+    matched = []
+
+    for clique in visible_cliques:
+        name_score = fuzz.partial_ratio(query, clique.name.lower())
+        desc_score = fuzz.partial_ratio(query, clique.description.lower())
+        best_score = max(name_score, desc_score)
+
+        if best_score >= 30:
+            sort_score = best_score + (10 if name_score >= desc_score else 0)
+            matched.append((sort_score, clique))
+
+    matched.sort(key=lambda x: x[0], reverse=True)
+    sorted_cliques = [item[1] for item in matched]
+
+    admin_map = {clique.id: db.session.get(User, clique.admin_id) for clique in sorted_cliques}
+
+    member_counts = {clique.id: len(clique.users) for clique in sorted_cliques}
+    marker_counts = {clique.id: len(clique.markers) for clique in sorted_cliques}
+    user_clique_ids = {cu.clique_id for cu in current_user.cliques}
+
+    return render_template(
+        "user/search_results.html",
+        results=sorted_cliques,
+        admin_map=admin_map,
+        member_counts=member_counts,
+        marker_counts=marker_counts,
+        user_clique_ids=user_clique_ids,
+        name=current_user.name,
+        logged_in=True
+    )
+
+
+@app.route('/autocomplete')
+@login_required
+def autocomplete():
+    term = request.args.get('term', '').lower()
+    if not term:
+        return jsonify([])
+
+    cliques_list = Clique.query.filter(Clique.visibility.in_(["Public", "Protected"])).all()
+    matches = []
+
+    for clique in cliques_list:
+        if term in clique.name.lower() or term in clique.description.lower():
+            matches.append(clique.name)
+
+    # return unique names (limit to 10)
+    return jsonify(list(set(matches))[:10])
+
+
+@app.route('/request_join_protected/<int:clique_id>', methods=['POST'])
+@login_required
+def request_join_protected(clique_id):
+    if not db.session.get(Clique, clique_id):
+        return jsonify({"success": False, "message": "Clique not found."}), 404
+
+    existing_request = Notification.query.filter_by(
+        user_id=current_user.id,
+        clique_id=clique_id,
+        type="request to join protected"
+    ).first()
+
+    if existing_request:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"success": False, "message": "You already requested to join this clique."}), 400
+        flash("You have already requested to join this clique.", "warning")
+        return redirect(url_for("feed"))
+
+    new_note = Notification(
+        user_id=current_user.id,
+        clique_id=clique_id,
+        type="request to join protected"
+    )
+    db.session.add(new_note)
+
+    # delete any old invitation
+    original_invite = Notification.query.filter_by(
+        user_id=current_user.id,
+        clique_id=clique_id,
+        type="invitation protected"
+    ).first()
+    if original_invite:
+        db.session.delete(original_invite)
+
+    db.session.commit()
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"success": True, "message": "Request sent to the clique admin."})
+    flash("Request sent to the clique admin.", "success")
+    return redirect(url_for("feed"))
+
+
+@app.route('/get_notifications')
+@login_required
+def get_notifications():
+    notifications = []
+
+    # 1. regular notifications addressed directly to the current user
+    personal_notes = Notification.query.filter(Notification.user_id == current_user.id).filter(
+        Notification.type != "request to join protected"
+    ).all()
+
+    for note in personal_notes:
+        clique = db.session.get(Clique, note.clique_id)
+        clique_name = clique.name if clique else "Unknown"
+        visibility = clique.visibility if clique else "Unknown"
+
+        if note.type == "ban":
+            notifications.append({
+                "id": note.id,
+                "clique_id": note.clique_id,
+                "clique_name": clique_name,
+                "type": note.type
+            })
+        elif note.type == "unban":
+            notifications.append({
+                "id": note.id,
+                "clique_id": note.clique_id,
+                "clique_name": clique_name,
+                "type": note.type
+            })
+        elif note.type == "kick":
+            notifications.append({
+                "id": note.id,
+                "clique_id": note.clique_id,
+                "clique_name": clique_name,
+                "type": note.type
+            })
+        elif note.type == "invitation" or note.type == "invitation admin" or note.type == "invitation protected":
+            notifications.append({
+                "id": note.id,
+                "clique_id": note.clique_id,
+                "clique_name": clique_name,
+                "visibility": visibility,
+                "type": note.type
+            })
+        elif note.type == "invitation to become admin":
+            notifications.append({
+                "id": note.id,
+                "clique_id": note.clique_id,
+                "clique_name": clique_name,
+                "type": note.type
+            })
+
+    # 2. show "request to join protected" only if current user is the clique's admin
+    join_requests = Notification.query.filter_by(type="request to join protected").all()
+
+    for note in join_requests:
+        clique = db.session.get(Clique, note.clique_id)
+        if clique and clique.admin_id == current_user.id:
+            requester = db.session.get(User, note.user_id)
+            notifications.append({
+                "id": note.id,
+                "clique_id": clique.id,
+                "clique_name": clique.name,
+                "visibility": clique.visibility,
+                "type": "request to join protected",
+                "requester_name": requester.name if requester else "Unknown"
+            })
+
+    return jsonify({"notifications": notifications})
+
+
+@app.route('/delete_notification/<int:id>', methods=['POST'])
+@login_required
+def delete_notification(id):
+    note = db.session.get(Notification, id)
+
+    # only master can delete report-type notifications
+    report_types = {"bot like report", "overwhelming bias report", "hurtful language report"}
+    if note and note.type in report_types:
+        if current_user.email == "adminadmin@gmail.com":
+            db.session.delete(note)
+            db.session.commit()
+            return redirect(url_for("master_reports"))
+        else:
+            return redirect(url_for("home"))
+
+    # normal user-related notifications (ban, kick, invites, etc.)
+    if note and (
+        note.user_id == current_user.id or
+        (note.clique_id and db.session.get(Clique, note.clique_id).admin_id == current_user.id)
+    ):
+        db.session.delete(note)
+        db.session.commit()
+        return jsonify({"success": True})
+
+    return jsonify({"success": False, "message": "Notification not found or unauthorized"}), 404
+
+
+# CLIQUE ADMIN FUNCTIONS
+""" functions used by the cliques' admins to manage the cliques"""
+@app.route('/accept_request/<int:note_id>/<int:clique_id>', methods=['POST'])
+@login_required
+def accept_request(note_id, clique_id):
+    note = Notification.query.get_or_404(note_id)
+    clique = Clique.query.get_or_404(clique_id)
+
+    if current_user.id != clique.admin_id:
+        return jsonify({"success": False, "message": "Only the admin can accept join requests."}), 403
+
+    user = db.session.get(User, note.user_id)
+    new_link = CliqueUser(
+        user_id=user.id,
+        clique_id=clique_id,
+        joined_date=datetime.today().strftime('%Y-%m-%d')
+    )
+    db.session.add(new_link)
+    db.session.delete(note)  # delete the notification
+    db.session.commit()
+
+    return jsonify({"success": True, "message": f"{user.name} has been added to '{clique.name}'."})
+
+
+@app.route('/admin_control_room/<int:clique_id>', methods=["GET", "POST"])
+@login_required
+def admin_control_room(clique_id):
+    clique = Clique.query.get_or_404(clique_id)
+
+    if clique.admin_id != current_user.id:
+        flash("Access denied. You are not the admin of this clique.", "danger")
+        return redirect(url_for('feed'))
+
+    admin_user = db.session.get(User, clique.admin_id)
+
+    # get all members of the clique (excluding the admin for the lower table)
+    members = (
+        db.session.query(User).join(CliqueUser, CliqueUser.user_id == User.id).filter(CliqueUser.clique_id == clique_id,
+                                                                                      User.id != clique.admin_id).all())
+
+    # prepare review stats per user
+    clique_users = []
+    for user in members:
+        marker_ids_subq = db.session.query(UserMarker.marker_id).filter_by(clique_id=clique_id).distinct()
+        user_reviews = Review.query.filter(
+            Review.user_id == user.id,
+            Review.marker_id.in_(marker_ids_subq)
+        ).all()
+
+        review_count = len(user_reviews)
+        avg_rating = round(sum(r.stars for r in user_reviews) / review_count, 2) if review_count > 0 else 0.0
+
+        clique_users.append({
+            "id": user.id,
+            "name": user.name,
+            "reviews_added": review_count,
+            "average_rating": avg_rating
+        })
+
+    # admin stats (separate row at top)
+    admin_marker_ids = [
+        um.marker_id for um in UserMarker.query.filter_by(clique_id=clique_id).all()
+    ]
+    admin_reviews = Review.query.filter(
+        Review.user_id == admin_user.id,
+        Review.marker_id.in_(admin_marker_ids)
+    ).all()
+    admin_review_count = len(admin_reviews)
+    admin_avg_rating = round(
+        sum(r.stars for r in admin_reviews) / admin_review_count, 2
+    ) if admin_review_count > 0 else 0.0
+
+    banned_users = BannedUser.query.filter_by(clique_id=clique_id).all()
+    banned_info = []
+    for b in banned_users:
+        user = db.session.get(User, b.user_id)
+        if user:
+            banned_info.append({
+                "user_id": b.user_id,
+                "name": user.name,
+                "ban_date": b.ban_date,
+                "reason": b.reason
+            })
+
+    time_window = request.args.get("range", "week")
+    today = datetime.today()
+    if time_window == "month":
+        start_date = today - timedelta(days=30)
+    elif time_window == "year":
+        start_date = today - timedelta(days=365)
+    else:
+        start_date = today - timedelta(days=7)
+
+    start_date_str = start_date.strftime('%Y-%m-%d')
+
+    joined_count = CliqueUser.query.filter_by(clique_id=clique_id).filter(
+        CliqueUser.joined_date >= start_date_str).count()
+
+    marker_count = UserMarker.query.filter_by(clique_id=clique_id).filter(
+        UserMarker.creation_date >= start_date_str).count()
+
+    review_count = db.session.query(Review).filter(
+        Review.creation_date >= start_date_str,
+        Review.marker_id.in_(
+            db.session.query(UserMarker.marker_id)
+                .filter_by(clique_id=clique_id)
+                .distinct()
+        )
+    ).count()
+
+    if time_window == "year":
+        today = datetime.today()
+        labels = [str(today.year - i) for i in range(2, -1, -1)]
+
+        def extract(date_str):
+            return date_str[:4]
+    elif time_window == "month":
+        today = datetime.today().replace(day=1)
+        labels = [(today - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(11, -1, -1)]
+
+        def extract(date_str):
+            return date_str[:7]
+    else:
+        today = datetime.today().date()
+        labels = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(6, -1, -1)]
+
+        def extract(date_str):
+            return date_str
+
+    members = CliqueUser.query.filter_by(clique_id=clique_id).all()
+    markers = UserMarker.query.filter_by(clique_id=clique_id).all()
+    marker_ids = [m.marker_id for m in markers]
+    reviews = Review.query.filter(Review.marker_id.in_(marker_ids)).all()
+
+    members_by = Counter(extract(m.joined_date) for m in members)
+    markers_by = Counter(extract(m.creation_date) for m in markers)
+    reviews_by = Counter(extract(r.creation_date) for r in reviews)
+
+    members_series = [members_by.get(label, 0) for label in labels]
+    markers_series = [markers_by.get(label, 0) for label in labels]
+    reviews_series = [reviews_by.get(label, 0) for label in labels]
+
+    return render_template(
+        "user/admin_control_room.html",
+        clique=clique,
+        admin_user=admin_user,
+        admin_review_count=admin_review_count,
+        admin_avg_rating=admin_avg_rating,
+        clique_users=clique_users,
+        banned_users=banned_info,
+        logged_in=True,
+        name=current_user.name,
+        joined_count=joined_count,
+        marker_count=marker_count,
+        review_count=review_count,
+        time_range=time_window,
+        week_days=labels,
+        members_series=members_series,
+        markers_series=markers_series,
+        reviews_series=reviews_series,
+    )
+
+
+@app.route('/kick_user/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def kick_user(clique_id, user_id):
+    clique = Clique.query.get_or_404(clique_id)
+    if current_user.id != clique.admin_id and current_user.email != "adminadmin@gmail.com":
+        flash("You are not authorized to perform this action.", "danger")
+        return redirect(url_for('feed'))
+
+    delete_user_from_clique(clique_id, user_id)
+    db.session.add(Notification(type="kick", user_id=user_id, clique_id=clique_id))
+    db.session.commit()
+    flash("User kicked from the clique and related data removed.", "success")
+
+    if current_user.email == "adminadmin@gmail.com":
+        return redirect(url_for('cliques'))
+    return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+
+@app.route('/ban_user/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def ban_user(clique_id, user_id):
+    reason = request.form.get("reason", "").strip()[:100]
+    clique = Clique.query.get_or_404(clique_id)
+
+    if current_user.id != clique.admin_id and current_user.email != "adminadmin@gmail.com":
+        flash("You are not authorized to perform this action.", "danger")
+        return redirect(url_for('feed'))
+
+    db.session.add(BannedUser(
+        user_id=user_id,
+        clique_id=clique_id,
+        reason=reason,
+        ban_date=datetime.today().strftime('%Y-%m-%d')
+    ))
+    db.session.add(Notification(type="ban", user_id=user_id, clique_id=clique_id))
+    delete_user_from_clique(clique_id, user_id)
+    db.session.commit()
+
+    flash("User was banned and removed from the clique.", "success")
+    if current_user.email == "adminadmin@gmail.com":
+        return redirect(url_for('cliques'))
+    return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+
+@app.route('/unban_user/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def unban_user(clique_id, user_id):
+    clique = Clique.query.get_or_404(clique_id)
+
+    if current_user.id != clique.admin_id:
+        flash("You are not authorized to unban users from this clique.", "danger")
+        return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+    BannedUser.query.filter_by(user_id=user_id, clique_id=clique_id).delete()
+    db.session.add(Notification(type="unban", user_id=user_id, clique_id=clique_id))
+
+    db.session.commit()
+
+    flash("User has been unbanned and can now rejoin the clique.", "success")
+    return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+
+@app.route('/transfer_admin/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def transfer_admin(clique_id, user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("You are not authorized to transfer admin rights.", "danger")
+        return redirect(url_for('edit_clique', clique_id=clique_id))
+
+    clique = Clique.query.get_or_404(clique_id)
+    user = User.query.get_or_404(user_id)
+
+    if user.id == clique.admin_id:
+        flash("This user is already the admin.", "info")
+        return redirect(url_for('edit_clique', clique_id=clique_id))
+
+    clique.admin_id = user.id
+    db.session.commit()
+
+    flash(f"{user.name} is now the admin of '{clique.name}'.", "success")
+    return redirect(url_for('edit_clique', clique_id=clique_id))
+
+
+@app.route('/user-reviews-map/<int:user_id>/<int:clique_id>')
+@login_required
+def user_reviews_map(user_id, clique_id):
+    user = User.query.get_or_404(user_id)
+
+    # get marker id's that the user has reviewed
+    reviewed_marker_ids = db.session.query(Review.marker_id).filter_by(user_id=user_id).all()
+    reviewed_marker_ids = [mid[0] for mid in reviewed_marker_ids]
+
+    # from those, get marker id's that are also in the given clique
+    clique_marker_ids = db.session.query(UserMarker.marker_id).filter_by(clique_id=clique_id).all()
+    clique_marker_ids = [mid[0] for mid in clique_marker_ids]
+
+    # intersection of reviewed + clique-owned markers
+    final_marker_ids = set(reviewed_marker_ids) & set(clique_marker_ids)
+
+    # get actual markers
+    markers = Marker.query.filter(Marker.id.in_(final_marker_ids)).all()
+
+    features = []
+    for marker in markers:
+        review = Review.query.filter_by(user_id=user.id, marker_id=marker.id).first()
+        if not review:
+            continue
+
+        is_creator = UserMarker.query.filter_by(user_id=user.id, marker_id=marker.id).first() is not None
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [marker.long, marker.lat]
+            },
+            "properties": {
+                "marker_title": marker.description or "Untitled Marker",
+                "stars": review.stars,
+                "commentary": review.commentary or "",
+                "is_creator": is_creator
+            }
+        })
+
+    return render_template(
+        "user/user_reviews_map.html",
+        user=user,
+        features=features,
+        logged_in=True,
+        name=current_user.name
+    )
+
+
+@app.route('/user-events-map/<int:user_id>/<int:clique_id>')
+@login_required
+def user_events_map(user_id, clique_id):
+    user = User.query.get_or_404(user_id)
+
+    # get marker id's that the user has reviewed
+    evented_marker_ids = db.session.query(Event.marker_id).filter_by(user_id=user_id).all()
+    evented_marker_ids = [mid[0] for mid in evented_marker_ids]
+
+    # from those, get marker id's that are also in the given clique
+    clique_marker_ids = db.session.query(UserMarker.marker_id).filter_by(clique_id=clique_id).all()
+    clique_marker_ids = [mid[0] for mid in clique_marker_ids]
+
+    # intersection of reviewed + clique-owned markers
+    final_marker_ids = set(evented_marker_ids) & set(clique_marker_ids)
+
+    # get actual markers
+    markers = Marker.query.filter(Marker.id.in_(final_marker_ids)).all()
+
+    features = []
+    for marker in markers:
+        events = Event.query.filter(Event.user_id == user.id, Event.marker_id == marker.id,
+                                    Event.clique_id == clique_id).all()
+
+        events_data = [
+            {
+                "date": e.date,
+                "time": e.time,
+                "description": e.description,
+                "user": db.session.get(User, e.user_id).name
+            }
+            for e in events
+        ]
+
+        is_creator = UserMarker.query.filter_by(user_id=user.id, marker_id=marker.id).first() is not None
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [marker.long, marker.lat]
+            },
+            "properties": {
+                "marker_title": marker.description or "Untitled Marker",
+                "events": events_data,
+                "is_creator": is_creator
+            }
+        })
+
+    return render_template(
+        "user/user_events_map.html",
+        user=user,
+        features=features,
+        logged_in=True,
+        name=current_user.name
+    )
+
+
+@app.route('/send_admin_invitation/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def send_admin_invitation(clique_id, user_id):
+    clique = db.session.get(Clique, clique_id)
+    if not clique or clique.admin_id != current_user.id:
+        flash("Unauthorized action.", "danger")
+        return redirect(url_for('feed'))
+
+    # prevent duplicates
+    existing = Notification.query.filter_by(
+        user_id=user_id,
+        clique_id=clique_id,
+        type="invitation to become admin"
+    ).first()
+
+    if existing:
+        flash("Invitation to become admin already sent to this user.", "info")
+        return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+    db.session.add(Notification(
+        user_id=user_id,
+        clique_id=clique_id,
+        type="invitation to become admin"
+    ))
+    db.session.commit()
+    flash("Invitation to become admin sent.", "success")
+    return redirect(url_for('admin_control_room', clique_id=clique_id))
+
+
+@app.route('/accept_admin_invite/<int:note_id>/<int:clique_id>', methods=['POST'])
+@login_required
+def accept_admin_invite(note_id, clique_id):
+    note = Notification.query.get_or_404(note_id)
+    clique = Clique.query.get_or_404(clique_id)
+
+    if note.user_id != current_user.id or note.type != "invitation to become admin":
+        flash("Invalid request.", "danger")
+        return redirect(url_for('maptest'))
+
+    clique.admin_id = current_user.id
+    db.session.delete(note)
+    db.session.commit()
+
+    flash(f"You are now the admin of {clique.name}.", "success")
+    return redirect(url_for('maptest'))
+
+
+@app.route('/decline_admin_invite/<int:note_id>', methods=['POST'])
+@login_required
+def decline_admin_invite(note_id):
+    note = Notification.query.get_or_404(note_id)
+    if note.user_id != current_user.id or note.type != "invitation to become admin":
+        flash("Invalid request.", "danger")
+        return redirect(url_for('maptest'))
+
+    db.session.delete(note)
+    db.session.commit()
+    flash("Invitation to become admin declined.", "info")
+    return redirect(url_for('maptest'))
+
+
+@app.route('/report_user', methods=['POST'])
+@login_required
+def report_user():
+    user_id = int(request.form.get('user_id'))
+    clique_id = int(request.form.get('clique_id'))
+    reasons = request.form.getlist('reasons')
+
+    if not reasons:
+        flash("You must select at least one reason.", "danger")
+        return redirect(request.referrer)
+
+    for reason in reasons:
+        db.session.add(Notification(
+            type=reason,
+            user_id=user_id,
+            clique_id=clique_id
+        ))
+
+    db.session.commit()
+    flash("Report submitted.", "success")
+    return redirect(request.referrer)
+
+
+# MASTER FUNCTIONS
+""" functions accessible only to the master user """
+@app.route('/users')
+@login_required
+def users():
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('home'))
+
+    users_arr = User.query.all()
+
+    banned_users = BannedUser.query.all()
+    banned_info = []
+    for b in banned_users:
+        user = db.session.get(User, b.user_id)
+        clique = db.session.get(Clique, b.clique_id)
+        admin = db.session.get(User, clique.admin_id) if clique else None
+        if user and clique and admin:
+            banned_info.append({
+                "user_id": user.id,
+                "user_name": user.name,
+                "clique_id": clique.id,
+                "clique_name": clique.name,
+                "reason": b.reason,
+                "admin_name": admin.name,
+            })
+
+    return render_template(
+        "master/users.html",
+        name=current_user.name,
+        logged_in=True,
+        usersList=users_arr,
+        banned_users=banned_info
+    )
+
+
+@app.route('/unban_user_master/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def unban_user_master(clique_id, user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Only the master can perform this action.", "danger")
+        return redirect(url_for('users'))
+
+    BannedUser.query.filter_by(user_id=user_id, clique_id=clique_id).delete()
+    db.session.add(Notification(type="unban", user_id=user_id, clique_id=clique_id))
+    db.session.commit()
+
+    flash("User successfully unbanned.", "success")
+    return redirect(url_for('users'))
+
+
+@app.route('/adduser')
+@login_required
+def adduser():
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('home'))
+    return render_template("master/adduser.html", name=current_user.name, logged_in=True)
+
+
+@app.route('/adder', methods=["POST"])
+@login_required
+def adder():
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('users'))
+
+    if "name" in request.form and "email" in request.form and "password" in request.form:
+        name = request.form.get("name")
+        email = request.form.get("email")
+        password = request.form.get("password")
+
+        if not is_valid_email(email):
+            flash("Invalid email format! Please enter a valid email.", "danger")
+            return redirect(url_for("users"))
+
+        if not is_valid_password(password):
+            flash("Password must be at least 8 characters long, include a letter, a number, and a special character.",
+                  "danger")
+            return redirect(url_for("users"))
+
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash(f"User with email {email} already exists!", "danger")
+        else:
+            hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
+            new_user = User(name=name, email=email, password=hashed_password)
+            db.session.add(new_user)
+            db.session.commit()
+            flash(f"User {email} added successfully!", "success")
+
+    return redirect(url_for("users"))
+
+
+@app.route('/edit_user/<int:user_id>', methods=['POST'])
+@login_required
+def edit_user(user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        return jsonify({"success": False, "message": "You do not have permission to edit users."})
+
+    user = db.session.get(User, user_id)
+    if user:
+        data = request.get_json()
+        new_email = data.get("email")
+        new_name = data.get("name")
+
+        if User.query.filter(User.email == new_email, User.id != user.id).first():
+            return jsonify({"success": False, "message": "Email already exists!"})
+
+        user.email = new_email
+        user.name = new_name
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "User updated successfully!"})
+
+    return jsonify({"success": False, "message": "User not found."})
+
+
+@app.route('/cliques')
+def cliques():
+    all_cliques = Clique.query.all()
+    admin_map = {clique.id: db.session.get(User, clique.admin_id) for clique in all_cliques}
+    return render_template("master/cliques.html",
+                           cliquesList=all_cliques,
+                           adminMap=admin_map,
+                           logged_in=current_user.is_authenticated)
+
+
+@app.route('/clique-map/<int:clique_id>')
+@login_required
+def master_clique_map(clique_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('home'))
+
+    clique = Clique.query.get_or_404(clique_id)
+    return render_template("master/clique_map.html", clique=clique, logged_in=True)
+
+
+@app.route('/edit_clique/<int:clique_id>', methods=['GET'])
+@login_required
+def edit_clique(clique_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('cliques'))
+
+    clique = Clique.query.get_or_404(clique_id)
+    all_users = User.query.all()
+
+    member_ids = set(cu.user_id for cu in clique.users)
+
+    # gather all reviews related to this clique
+    marker_ids = [um.marker_id for um in UserMarker.query.filter_by(clique_id=clique_id).all()]
+    reviews = Review.query.filter(Review.marker_id.in_(marker_ids)).all()
+
+    # attach user and marker info (if not eager-loaded)
+    for review in reviews:
+        review.user = db.session.get(User, review.user_id)
+        review.marker = db.session.get(Marker, review.marker_id)
+
+    # sort reviews by marker name (alphabetically)
+    sorted_reviews = sorted(reviews, key=lambda r: (r.marker.description or "").lower())
+
+    events = Event.query.filter_by(clique_id=clique_id)
+
+    for event in events:
+        event.user = db.session.get(User, event.user_id)
+        event.marker = db.session.get(Marker, event.marker_id)
+    sorted_events = sorted(events, key=lambda r: (r.marker.description or "").lower())
+
+    return render_template("master/edit_clique.html",
+                           clique=clique,
+                           all_users=all_users,
+                           member_ids=member_ids, sorted_reviews=sorted_reviews, sorted_events=sorted_events,
+                           logged_in=True)
+
+
+@app.route('/remove_user_from_clique/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def remove_user_from_clique(clique_id, user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('cliques'))
+
+    clique = Clique.query.get_or_404(clique_id)
+    if user_id == clique.admin_id:
+        flash("Cannot remove the admin from the clique.", "danger")
+        return redirect(url_for('edit_clique', clique_id=clique_id))
+
+    CliqueUser.query.filter_by(clique_id=clique_id, user_id=user_id).delete()
+    db.session.commit()
+    flash("User removed from clique.", "success")
+    return redirect(url_for('edit_clique', clique_id=clique_id))
+
+
+@app.route('/remove_marker_from_clique/<int:clique_id>/<int:marker_id>', methods=['POST'])
+@login_required
+def remove_marker_from_clique(clique_id, marker_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('cliques'))
+
+    # delete all reviews for this marker first
+    reviews = Review.query.filter_by(marker_id=marker_id).all()
+    for review in reviews:
+        db.session.delete(review)
+
+    # delete all usermarker links for this clique
+    UserMarker.query.filter_by(clique_id=clique_id, marker_id=marker_id).delete()
+
+    # delete any events linked to this marker in this clique
+    events_on_marker = Event.query.filter(Event.marker_id == marker_id, Event.clique_id == clique_id).all()
+    for event in events_on_marker:
+        db.session.delete(event)
+
+    # if marker is no longer used in any clique, remove it entirely
+    if not UserMarker.query.filter_by(marker_id=marker_id).first():
+        marker = db.session.get(Marker, marker_id)
+        if marker:
+            db.session.delete(marker)
+
+    db.session.commit()
+    flash("Marker and related data removed.", "success")
+    return redirect(url_for('edit_clique', clique_id=clique_id))
+
+
+@app.route('/add_user_to_clique/<int:clique_id>/<int:user_id>', methods=['POST'])
+@login_required
+def add_user_to_clique(clique_id, user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('cliques'))
+
+    existing = CliqueUser.query.filter_by(clique_id=clique_id, user_id=user_id).first()
+    if not existing:
+        db.session.add(CliqueUser(
+            user_id=user_id,
+            clique_id=clique_id,
+            joined_date=datetime.today().strftime('%Y-%m-%d')
+        ))
+        db.session.commit()
+        flash("User added to clique.", "success")
+    else:
+        flash("User already in clique.", "info")
+
+    return redirect(url_for('edit_clique', clique_id=clique_id))
+
+
+@app.route('/delete_review_from_clique/<int:review_id>/<int:clique_id>', methods=['POST'])
+@login_required
+def delete_review_from_clique(review_id, clique_id):
+    review = Review.query.get_or_404(review_id)
+    marker = db.session.get(Marker, review.marker_id)
+
+    db.session.delete(review)
+
+    # recalculate stats or delete marker
+    remaining_reviews = Review.query.filter_by(marker_id=marker.id).all()
+    if not remaining_reviews:
+        UserMarker.query.filter_by(marker_id=marker.id, clique_id=clique_id).delete()
+        Event.query.filter_by(marker_id=marker.id).delete()
+        db.session.delete(marker)
+    else:
+        marker.total_reviews = len(remaining_reviews)
+        marker.average_review = round(sum(r.stars for r in remaining_reviews) / len(remaining_reviews), 2)
+
+    db.session.commit()
+    flash("Review deleted successfully.", "success")
+    return redirect(url_for('edit_clique', clique_id=clique_id))
+
+
+@app.route('/master/reports')
+@login_required
+def master_reports():
+    if current_user.email != "adminadmin@gmail.com":
+        flash("Access denied.", "danger")
+        return redirect(url_for('home'))
+
+    types = ["bot like report", "overwhelming bias report", "hurtful language report"]
+    reports = Notification.query.filter(Notification.type.in_(types)).all()
+
+    enriched = [{
+        "id": r.id,
+        "user": db.session.get(User, r.user_id),
+        "clique": db.session.get(Clique, r.clique_id),
+        "type": r.type
+    } for r in reports]
+
+    return render_template("master/reports.html", reports=enriched, name=current_user.name, logged_in=True)
+
+
+# DELETIONS / CLEANUPS FUNCTIONS
+""" functions used for deletions"""
+@app.route('/delete-account', methods=['POST'])
+@login_required
+def delete_account():
+    if request.form.get("confirmed") != "true":
+        flash("Account deletion not confirmed.", "danger")
+        return redirect(url_for("manage_account"))
+
+    delete_user(current_user.id)
+    db.session.commit()
+    logout_user()
+    flash("Your account has been permanently deleted.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route('/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+def delete_user_route(user_id):
+    if current_user.email != "adminadmin@gmail.com":
+        flash("You do not have permission to delete users.", "danger")
+        return redirect(url_for('users'))
+
+    delete_user(user_id)
+    db.session.commit()
+    flash("User and associated data deleted.", "success")
+    return redirect(url_for('users'))
+
+
+@app.route('/delete_clique/<int:clique_id>', methods=['POST'])
+@login_required
+def delete_clique_route(clique_id):
+    clique = Clique.query.get_or_404(clique_id)
+    if current_user.id != clique.admin_id and current_user.email != "adminadmin@gmail.com":
+        flash("You are not authorized to delete this clique.", "danger")
+        return redirect(url_for('feed'))
+
+    delete_clique_and_contents(clique_id)
+    db.session.commit()
+    flash("Clique deleted.", "success")
+    return redirect(url_for('cliques'))
+
+
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

@@ -1,0 +1,330 @@
+{% extends "user/userbase.html" %}
+
+{% block head %}
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_blue.css">
+{% endblock %}
+
+{% block content %}
+
+<div style="height: 100vh; overflow-y: scroll;">
+  <div class="container mt-5 pt-4 text-white">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center mb-3">
+        <button type="button" style="background-color: transparent; border: none; padding: 0;" title="Click to edit photo" data-toggle="modal" data-target="#editPhotoModal">
+          {% if current_user.picture != 'default.jpg' %}
+            <img src="{{ url_for('static', filename='uploads/' + current_user.picture) }}"
+                alt="Profile Picture"
+                style="width: 5rem; height: 5rem; border-radius: 50%; object-fit: cover; margin-right: 1rem;">
+          {% else %}
+            <i class="bi bi-person-circle" style="color: white; font-size: 5rem; margin-right: 1rem;"></i>
+          {% endif %}
+        </button>
+          
+        <div style="text-align: left;">
+          <h4 class="mb-1">Username: {{ name }}</h4>
+          <h4 class="mb-0">Email: {{ current_user.email }}</h4>
+        </div>
+
+        <div class="modal fade" id="editPhotoModal" tabindex="-1" role="dialog" aria-labelledby="editPhotoModalLabel" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <form id="picForm" method="POST" enctype="multipart/form-data" action="{{ url_for('update_profile_pic', user_id=current_user.id) }}">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="editPhotoModalLabel">Edit Profile Photo</h5>
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                </div>
+
+                <div class="modal-body">
+                  {% if current_user.picture != 'default.jpg' %}
+                    <img src="{{ url_for('static', filename='uploads/' + current_user.picture) }}" class="img-thumbnail mb-3"
+                      style="width: 150px; height: 150px; object-fit: cover;">
+                      <p class="text-muted">Upload a new image to replace the current one.</p>
+                  {% else %}
+                    <i class="bi bi-person-circle mb-3" style="font-size: 5rem; color: #ccc;"></i>
+                    <p class="text-muted">No photo yet. Upload one below!</p>
+                  {% endif %}
+                  <input type="file" class="form-control" id="profile_photo" name="profile_photo" accept="image/*">
+                </div>
+                  <div class="modal-footer">
+                    {% if current_user.picture != 'default.jpg' %}
+                      <button type="submit" name="action" value="edit" class="btn btn-primary">Save Photo</button>
+                      <button type="submit" name="action" value="delete" class="btn btn-primary">Remove Photo</button>
+                    {% else %}
+                      <button type="submit" name="action" value="edit" class="btn btn-primary">Save Photo</button>
+                    {% endif %}
+                  </div>
+                </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-column">
+        <a href="{{ url_for('user_edit_user') }}" class="btn btn-primary mb-2">Edit Name & Email</a>
+        <a href="{{ url_for('change_password') }}" class="btn btn-warning mb-2">Change Password</a>
+        <a href="{{ url_for('manage_account') }}" class="btn btn-warning" style="color: rgb(214, 4, 4);">Manage Account</a>
+      </div>
+    </div>
+    <hr>
+
+    <!-- cliques table -->
+    <h3 class="mt-4 left-align">Cliques</h3>
+    <div class="table-container left-align">
+      <div class="scrollable-table">
+        <table class="table table-dark table-striped text-center">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>User Status</th>
+              <th>Clique Type</th>
+              <th>Reviews Added / Total Markers</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for clique in cliques %}
+            <tr>
+              <td>{{ clique.name }}</td>
+              <td>{{ clique.description }}</td>
+              <td>
+              {% if clique.status == "admin" %}
+                Admin <span style="color: gold;">👑</span>
+              {% else %}
+                {{ clique.status|capitalize }}
+              {% endif %}
+              </td>
+              <td>{{ clique.visibility|capitalize }}</td>
+              <td>{{ clique.reviews_added }}</td>
+              <td>
+              {% if clique.status == 'admin' %}
+                <a href="{{ url_for('admin_control_room', clique_id=clique.id) }}" class="btn btn-sm btn-warning">Admin Control Room</a>
+              {% else %}
+                <form action="{{ url_for('leave_clique', clique_id=clique.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to leave this clique?')">
+                  <button type="submit" class="btn btn-sm btn-danger">Leave</button>
+                </form>
+              {% endif %}
+            </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- reviews table -->
+    <h3 class="mt-5 left-align">Your Reviews</h3>
+    <div class="table-container left-align">
+      <div class="scrollable-table">
+        <table class="table table-dark table-striped text-center">
+          <thead>
+            <tr>
+              <th>Clique</th>
+              <th>Marker</th>
+              <th>Review</th>
+              <th>Stars</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for review in reviews %}
+              <tr data-review-id="{{ review.review_id }}" data-marker-id="{{ review.marker_id }}">
+                <td>{{ review.clique_name }}</td>
+                <td>{{ review.marker_name }}</td>
+                <td class="review-text">{{ review.commentary }}</td>
+                <td class="review-stars">
+                  {% for i in range(1, 6) %}
+                    <span class="star {% if i <= review.stars %}gold{% endif %}" data-value="{{ i }}">&#9733;</span>
+                  {% endfor %}
+                </td>
+                <td>
+                  <a href="{{ url_for('edit_review', marker_id=review.marker_id) }}" class="btn btn-sm btn-warning">Edit</a>
+                  <button class="btn btn-sm btn-danger delete-review-btn">Delete</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- events table -->
+    <h3 class="mt-5 left-align">Your Events</h3>
+    <div class="table-container left-align">
+      <div class="scrollable-table">
+        <table class="table table-dark table-striped text-center">
+          <thead>
+            <tr>
+              <th>Clique</th>
+              <th>Marker</th>
+              <th>Description</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in events %}
+              <tr>
+                <td>{{ event.clique_name }}</td>
+                <td>{{ event.marker_name }}</td>
+                <td>{{ event.description }}</td>
+                <td>{{ event.date }}</td>
+                <td>{{ event.time }}</td>
+                <td>
+                  <button class="btn btn-sm btn-danger delete-event-btn" data-toggle="modal" data-target="#editModal-{{ event.event_id }}">Edit</button>
+                  <form action="{{ url_for('update_event', event_id=event.event_id) }}" method="POST" style="display:inline;">
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="delete" type="submit">Delete</button>
+                  </form>
+                </td>
+              </tr>
+
+              <div class="modal fade" id="editModal-{{ event.event_id }}" tabindex="-1" role="dialog" aria-labelledby="editLabel-{{ event.event_id }}" aria-hidden="true">
+                <div class="modal-dialog" role="document">
+                  <div class="modal-content">
+      
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="editLabel-{{ event.event_id }}">Edit Event</h5>
+                      <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                      </button>
+                    </div>
+      
+                    <div class="modal-body">
+                      <form class="eventForm" method="POST" action="{{ url_for('update_event', event_id=event.event_id) }}">
+                        <div class="form-group">
+                          <label for="datetime-{{ event.event_id }}">Date & Time</label>
+                          <input
+                            type="text"
+                            class="form-control datetimepicker"
+                            id="datetime-{{ event.event_id }}"
+                            placeholder="{{ event.date }} {{ event.time }}" required>
+                          <input type="hidden" name="date" id="hidden-date-{{ event.event_id }}" value="{{ event.date }}">
+                          <input type="hidden" name="time" id="hidden-time-{{ event.event_id }}" value="{{ event.time }}">
+                        </div>
+      
+                        <div class="form-group">
+                          <label for="eventDescription-{{ event.event_id }}">Event Description</label>
+                          <textarea class="form-control" id="eventDescription-{{ event.event_id }}" name="description" rows="3" required>{{ event.description }}</textarea>
+                        </div>
+      
+                        <button type="submit" name="action" value="edit" class="btn btn-primary">Save Changes</button>
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                      </form>
+                    </div>
+      
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const form = document.getElementById('picForm');
+  const photoInput = document.getElementById('profile_photo');
+  let clickedButton = null;
+
+  // track which submit button was clicked
+  form.addEventListener('click', function (e) {
+    if (e.target.type === 'submit') {
+      clickedButton = e.target;
+    }
+  });
+
+  form.addEventListener('submit', function (e) {
+    const fileSelected = photoInput.files.length > 0;
+
+    // if save photo button was clicked and no file is chosen → prevent submission
+    if (clickedButton && clickedButton.value === 'edit' && !fileSelected) {
+      e.preventDefault(); 
+      alert('Please select a photo before saving.');
+    }
+  });
+</script>
+<!-- JS: jQuery + Bootstrap + Flatpickr -->
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const pad = (num) => num.toString().padStart(2, '0');
+
+    document.querySelectorAll(".datetimepicker").forEach(function (input) {
+      const eventId = input.id.split("-")[1];
+      const hiddenDate = document.getElementById(`hidden-date-${eventId}`);
+      const hiddenTime = document.getElementById(`hidden-time-${eventId}`);
+
+      const initialValue = hiddenDate.value && hiddenTime.value
+        ? `${hiddenDate.value} ${hiddenTime.value}`
+        : "";
+
+      flatpickr(input, {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i",
+        defaultDate: initialValue || null,
+        minDate: "today",
+        time_24hr: true,
+        onReady: function (selectedDates, dateStr, instance) {
+          maybeLimitTime(instance);
+        },
+        onChange: function (selectedDates, dateStr, instance) {
+          maybeLimitTime(instance);
+
+          if (selectedDates.length > 0) {
+            const selected = selectedDates[0];
+            const date = selected.toISOString().split('T')[0];
+            const time = selected.toTimeString().slice(0, 5);
+            hiddenDate.value = date;
+            hiddenTime.value = time;
+          }
+        }
+      });
+
+      function maybeLimitTime(instance) {
+        const selectedDate = instance.selectedDates[0] || instance.latestSelectedDateObj || new Date(instance.input.value);
+        const now = new Date();
+
+        const selectedYMD = selectedDate.toISOString().split('T')[0];
+        const todayYMD = now.toISOString().split('T')[0];
+
+        if (selectedYMD === todayYMD) {
+          const minHours = now.getHours();
+          const minMinutes = now.getMinutes();
+
+          instance.set('minTime', `${pad(minHours)}:${pad(minMinutes)}`);
+        } else {
+          instance.set('minTime', '00:00');
+        }
+      }
+    });
+
+    // form validation to block past datetime
+    document.querySelectorAll(".eventForm").forEach(function (form) {
+      form.onsubmit = function (event) {
+        const eventId = form.querySelector(".datetimepicker").id.split("-")[1];
+        const date = document.getElementById(`hidden-date-${eventId}`).value;
+        const time = document.getElementById(`hidden-time-${eventId}`).value;
+
+        const eventDateTime = new Date(`${date}T${time}`);
+        const now = new Date();
+
+        if (eventDateTime < now) {
+          alert('The event date and time cannot be in the past.');
+          event.preventDefault();
+        }
+      };
+    });
+  });
+</script>
+{% endblock %}

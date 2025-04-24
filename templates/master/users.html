@@ -1,0 +1,139 @@
+{% extends "master/masterbase.html" %}
+{% block content %}
+<div style="height: 100vh; overflow-y: scroll;">
+  <div class="container mt-4">
+    <h1 class="title">All Users</h1>
+
+    <!-- flash messages for success or error notifications -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <div class="table-responsive mb-4">
+      <div class="users-table">
+        <table class="table table-dark">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Email</th>
+              <th>Name</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in usersList %}
+              <tr id="user-row-{{ user.id }}">
+                <td>{{ user.id }}</td>
+                <td><span class="user-email">{{ user.email }}</span></td>
+                <td><span class="user-name">{{ user.name }}</span></td>
+                <td>
+                  <button class="btn btn-warning edit-btn" data-user-id="{{ user.id }}">Edit</button>
+                  <button class="btn btn-success save-btn d-none" data-user-id="{{ user.id }}">Save</button>
+
+                  <form action="{{ url_for('delete_user_route', user_id=user.id) }}" method="POST"
+                        onsubmit="return confirm('Warning: Are you sure you want to delete this user?');" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <a href="{{ url_for('adduser') }}" class="btn btn-secondary btn-block btn-large">Add User</a>
+    </div>
+    <h1 class="title mt-5">Banned Users Across All Cliques</h1>
+    <div class="table-responsive mb-4">
+      <table class="table table-striped table-dark text-center">
+        <thead>
+          <tr>
+            <th>Clique</th>
+            <th>Banned User</th>
+            <th>Reason</th>
+            <th>Admin</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ban in banned_users %}
+          <tr>
+            <td>{{ ban.clique_name }}</td>
+            <td>{{ ban.user_name }}</td>
+            <td>{{ ban.reason }}</td>
+            <td>{{ ban.admin_name }}</td>
+            <td>
+              <form action="{{ url_for('unban_user_master', clique_id=ban.clique_id, user_id=ban.user_id) }}" method="POST"
+                    onsubmit="return confirm('Are you sure you want to unban this user from the clique?');">
+                <button type="submit" class="btn btn-sm btn-danger">Unban</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="height: 200px;"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<!-- javaScript to handle inline editing -->
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll(".edit-btn").forEach(button => {
+      button.addEventListener("click", function() {
+        let userId = this.getAttribute("data-user-id");
+        let row = document.getElementById("user-row-" + userId);
+
+        let emailSpan = row.querySelector(".user-email");
+        let nameSpan = row.querySelector(".user-name");
+
+        // replace spans with input fields
+        emailSpan.innerHTML = `<input type="text" value="${emailSpan.textContent}" class="form-control user-email-input">`;
+        nameSpan.innerHTML = `<input type="text" value="${nameSpan.textContent}" class="form-control user-name-input">`;
+
+        // toggle buttons
+        this.classList.add("d-none");
+        row.querySelector(".save-btn").classList.remove("d-none");
+      });
+    });
+
+    document.querySelectorAll(".save-btn").forEach(button => {
+      button.addEventListener("click", function() {
+        let userId = this.getAttribute("data-user-id");
+        let row = document.getElementById("user-row-" + userId);
+
+        let emailInput = row.querySelector(".user-email-input").value;
+        let nameInput = row.querySelector(".user-name-input").value;
+
+        fetch(`/edit_user/${userId}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email: emailInput,
+            name: nameInput
+          })
+        }).then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              // update text
+              row.querySelector(".user-email").innerHTML = emailInput;
+              row.querySelector(".user-name").innerHTML = nameInput;
+
+              // toggle buttons back
+              row.querySelector(".edit-btn").classList.remove("d-none");
+              this.classList.add("d-none");
+            } else {
+              alert("Error: " + data.message);
+            }
+          });
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,164 @@
+{% extends "user/userbase.html" %}
+{% block content %}
+
+<style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f9f9f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+    }
+
+    .container {
+        background-color: #fff;
+        padding: 40px;
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        text-align: center;
+        max-width: 400px;
+    }
+
+    h2 {
+        margin-bottom: 10px;
+        color: #333;
+    }
+
+    p.warning {
+        color: #e74c3c;
+        margin-bottom: 30px;
+    }
+
+    .delete-btn {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        font-size: 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
+
+    .delete-btn:hover {
+        background-color: #c0392b;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 999;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+    }
+
+    .modal-content {
+        background-color: #fff;
+        margin: 15% auto;
+        padding: 30px;
+        border-radius: 10px;
+        width: 90%;
+        max-width: 400px;
+        text-align: center;
+    }
+
+    .modal-buttons {
+        margin-top: 20px;
+    }
+
+    .modal-buttons button {
+        padding: 10px 16px;
+        margin: 0 10px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    .cancel-btn {
+        background-color: #ccc;
+    }
+
+    .confirm-delete {
+        background-color: #e74c3c;
+        color: #fff;
+    }
+</style>
+
+
+<div class="container mt-5">
+    <h2>Delete Your Account</h2>
+    <p class="warning">⚠️ This action is permanent and cannot be undone.</p>
+    <button class="delete-btn" onclick="openModal()">Delete My Account</button>
+</div>
+
+<!-- confirmation modal -->
+<div class="modal" id="deleteModal">
+    <div class="modal-content">
+    <h3>Are you sure?</h3>
+    <p>Deleting your account will erase all your reviews, personal data, and transfer admin control to other users in any cliques you’ve managed. This cannot be recovered.</p>
+    <div class="modal-buttons">
+        <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+        <form id="deleteForm" method="POST" action="{{ url_for('delete_account') }}" style="display: inline;">
+            <button type="button" class="confirm-delete" onclick="askForPassword()">Yes, Delete</button>
+            <input type="hidden" name="confirmed" value="true">
+        </form>
+    </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    const modal = document.getElementById('deleteModal');
+
+    function openModal() {
+        modal.style.display = 'block';
+    }
+
+    function closeModal() {
+        modal.style.display = 'none';
+    }
+
+    // close modal if user clicks outside it
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            closeModal();
+        }
+    };
+
+    function askForPassword() {
+        const password = prompt("Please enter your password to confirm deletion:");
+
+        // if the user clicked cancel button
+        if (password === null) {
+            closeModal();
+            return; // do nothing and close the prompt
+        }
+
+        const response = fetch('verify-password', {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ password: password })
+        }).then(res => res.json())
+            .then(data => {
+                if (data.valid) {
+                    document.getElementById('deleteForm').submit();
+                }
+                else {
+                    alert('Incorrect password. Please try again.');
+                    askForPassword();
+                }
+            });
+
+    }
+</script>
+  
+
+{% endblock %}

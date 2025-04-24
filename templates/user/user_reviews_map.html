@@ -1,0 +1,80 @@
+{% extends "user/userbase.html" %}
+
+{% block head %}
+<title>{{ user.name }}'s Reviewed Markers</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<style>
+  #map-wrapper {
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-bottom: 80px;
+  }
+
+  #map {
+    width: 90vw;
+    height: 80vh;
+    border: 2px solid #ccc;
+    border-radius: 12px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+  }
+
+  .h2 {
+    text-align: center;
+    margin-top: 20px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>Markers Reviewed by {{ user.name }}</h2>
+<div id="map-wrapper">
+  <div id="map"></div>
+</div>
+{% endblock %} 
+
+{% block scripts %}
+<script>window.disableUniversalMap = true;</script>
+<script>
+  const features = {{ features | tojson }};
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const map = L.map('map').setView([31.0461, 34.8516], 8);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const layer = L.geoJSON(features, {
+      pointToLayer: function (feature, latlng) {
+        const title = feature.properties.marker_title;
+        const created = feature.properties.is_creator;
+        const stars = '★'.repeat(feature.properties.stars);
+        const commentary = feature.properties.commentary;
+
+        let popupContent = `<strong>${title}</strong>`;
+        if (created) popupContent += `<br><em>(created by this user)</em>`;
+        popupContent += `<br><span style="color: gold;">${stars}</span>`;
+        if (commentary) popupContent += `<br><em>${commentary}</em>`;
+
+        return L.marker(latlng).bindPopup(popupContent);
+      }
+
+    }).addTo(map);
+
+    if (features.length > 0) {
+      map.fitBounds(layer.getBounds());
+    } else {
+      console.warn("No markers to show.");
+    }
+
+    // fix for potential layout issues on initial load
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+  });
+</script>
+{% endblock %}

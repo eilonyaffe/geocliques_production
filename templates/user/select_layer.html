@@ -1,0 +1,40 @@
+{% extends "user/userbase.html" %}
+{% block content %}
+
+<style>
+  .layer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .layer-btn {
+    width: 100%;
+    padding: 10px;
+    background-color: #333;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  .active-layer {
+    background-color: #007bff;
+  }
+</style>
+
+<div class="container mt-5 text-white">
+  <h2 class="select-layer-title">Select Map Layer</h2>
+  <form method="POST">
+    <div class="layer-grid">
+      {% for value, label in layers %}
+        {% if value == selected_layer %}
+          <button type="submit" name="layer" value="{{ value }}" class="layer-btn active-layer">{{ label }}</button>
+        {% else %}
+          <button type="submit" name="layer" value="{{ value }}" class="layer-btn">{{ label }}</button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </form>
+</div>
+{% endblock %}

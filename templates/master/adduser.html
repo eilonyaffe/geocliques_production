@@ -1,0 +1,14 @@
+{% extends "master/masterbase.html" %}
+{% block content %}
+
+<div class="box">
+	<h1>Add user</h1>
+    <form action="{{ url_for('adder') }}" method="post">
+    	<input type="text" name="name" placeholder="Name" required="required" />
+		<input type="email" name="email" placeholder="Email" required="required" />
+        <input type="password" name="password" placeholder="Password" required="required" />
+        <button type="submit" class="btn btn-primary btn-block btn-large">Add user to DB</button>
+    </form>
+</div>
+
+{% endblock %}

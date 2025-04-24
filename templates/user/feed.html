@@ -1,0 +1,177 @@
+{% extends "user/userbase.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+{% endblock %}
+
+{% block content %}
+<body class="feed-page">
+
+  <div class="container mt-5 pt-4">
+    <form action="{{ url_for('search_cliques') }}" method="GET" class="modern-search-bar">
+      <input type="text" name="query" id="search-input" class="form-control search-input" placeholder="Search for cliques by name or description..." required>
+      <button type="submit" class="search-icon-btn" title="Search">
+        <i class="bi bi-search"></i>
+      </button>
+    </form>
+  </div>
+
+  <!-- user's cliques cards -->
+  <div class="cliques-section container mt-5 pt-2" style="color: #2c2c2c;">
+    <h3>Your Cliques</h3>
+    <div class="row">
+      {% for clique in cliques %}
+        <div class="col-md-6 mb-4">
+          <div class="card p-3 h-100 rounded shadow-sm" style="color: #2c2c2c;">
+            <h5 class="mb-2"><strong>{{ clique.name }}</strong></h5>
+            <p class="text-muted">{{ clique.description }}</p>
+            <p style="margin-bottom: 12px;"><strong>Status:</strong> 
+              {% if clique.status == "admin" %}
+                Admin <span style="color: gold;">👑</span>
+              {% else %}
+                {{ clique.status|capitalize }}
+              {% endif %}
+            </p>
+            <p><strong>Type:</strong> {{ clique.visibility|capitalize }}</p>
+            <div class="mt-2">
+              <button class="btn btn-primary btn-sm invite-btn" data-clique-id="{{ clique.id }}">Invite</button>
+              {% if clique.status == "admin" %}
+                <a href="{{ url_for('admin_control_room', clique_id=clique.id) }}" class="btn btn-info btn-sm">Admin Control Room</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- user's last updates table -->
+  <div class="container mt-5 pt-3 text-white updates-section">
+    <h3>📅 Recent Cliques Updates</h3>
+
+    {% if updates %}
+      <div class="mt-3 updates-container">
+        {% for u in updates %}
+          <div class="card custom-card">
+            <div class="date">{{ u.date }}</div>
+            <h4><strong>clique:</strong> {{ u.clique_name }}</h4>
+            {% if u.type == 'marker' %}
+              <h5> New marker named: <strong>{{ u.marker_name }}</strong></h5>
+            {% elif u.type == 'review' %}
+              <h5> New review for <strong>{{ u.marker_name }}</strong></h5>
+              <div class="mt-1 review-comment">
+                {{ u.commentary }}
+                <div class="mt-1 stars">
+                  {% for _ in range(u.stars) %}
+                    ⭐
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+            <div class="mt-2 d-flex align-items-center">
+              <span class="mr-2">By:</span>
+              {% if u.user_pic != 'default.jpg' %}
+                <img src="{{ url_for('static', filename='uploads/' + u.user_pic) }}"
+                    alt="Profile Picture"
+                    class="profile-img">
+              {% else %}
+                <i class="bi bi-person-circle profile-icon"></i>
+              {% endif %}
+              <span>{{ u.user_name }}</span>
+            </div>
+          </div>
+        {% endfor %}
+        <div class="text-muted mt-2 updates-info">
+          At most 20 updates from the past week
+        </div>
+      </div>
+    {% else %}
+      <div class="text-muted mt-3">No recent updates from your cliques.</div>
+    {% endif %}
+  </div>
+
+  <!-- user's cliques scoreboard table -->
+  <div class="container mt-5 pt-4 scoreboard-section">
+    <h3 class="d-inline-block mr-2">🏆 Cliques Scoreboard Overview</h3>
+    <span class="d-inline-block" tabindex="0" data-toggle="tooltip" data-placement="right"
+          title="Users are ranked based on the number of reviews and markers they added to the clique. We also consider the quality of those reviews.">
+      <i class="bi bi-question-circle-fill tooltip-icon"></i>
+    </span>
+
+    {% for board in scoreboards %}
+      <div class="mb-4 scoreboard-card p-3">
+        <h5 class="mb-3">{{ board.clique_name }}</h5>
+
+        <ul class="list-group scoreboard-list">
+          {% for row in board.ranking %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              {{ row.name }}
+              <span class="badge badge-rank">
+                {{ row.rank }}
+                {% if row.rank == 1 %} 🥇
+                {% elif row.rank == 2 %} 🥈
+                {% elif row.rank == 3 %} 🥉
+                {% endif %}
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  </div>
+</body>
+
+{% endblock %}
+{% block scripts %}
+<!-- autocomplete support (jQuery UI only for this feature) -->
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
+<script>
+  $(function () {
+    $('[data-toggle="tooltip"]').tooltip({ container: 'body' });
+  });
+</script>
+
+<script>
+  $(function () {
+    $("#search-input").autocomplete({
+      source: function (request, response) {
+        $.ajax({
+          url: "{{ url_for('autocomplete') }}",
+          data: { term: request.term },
+          success: function (data) {
+            response(data);
+          }
+        });
+      },
+      minLength: 2
+    });
+  });
+</script>
+
+<!-- invite logic -->
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".invite-btn").forEach(button => {
+      button.addEventListener("click", () => {
+        const cliqueId = button.getAttribute("data-clique-id");
+        const email = prompt("Enter the email of the user to invite:");
+
+        if (email && email.trim()) {
+          fetch("/send_invite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email.trim(), clique_id: cliqueId })
+          })
+          .then(res => res.json())
+          .then(data => alert(data.message))
+          .catch(err => {
+            console.error(err);
+            alert("An error occurred while sending the invite.");
+          });
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}

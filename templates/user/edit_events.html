@@ -1,0 +1,185 @@
+{% extends "user/userbase.html" %}
+
+{% block head %}
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_blue.css">
+{% endblock %}
+
+{% block content %}
+<style>
+  .table-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      padding-bottom: 150px;
+  }
+  th, td {
+      padding: 8px;
+      text-align: center;
+  }
+  input, textarea {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-shadow: none !important;
+  }
+  input[type="text"].flatpickr-input {
+      font-size: 16px;
+      font-family: Arial, sans-serif;
+      padding: 10px;
+      background: white;
+      border: 1px solid #ccc;
+      box-shadow: none !important;
+      outline: none;
+  }
+</style>
+
+<div class="table-container">
+  <div class="scrollable-table">
+    <table class="table table-dark table-striped text-center">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Description</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr>
+          <td>{{ event.date }}</td>
+          <td>{{ event.time }}</td>
+          <td>{{ event.description }}</td>
+          <td>
+            <button class="btn btn-sm btn-warning" data-toggle="modal" data-target="#editModal-{{ event.id }}">Edit</button>
+            <form action="{{ url_for('update_event', event_id=event.id) }}" method="POST" style="display:inline;">
+              <button type="submit" name="action" value="delete" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+
+        <!-- edit modal -->
+        <div class="modal fade" id="editModal-{{ event.id }}" tabindex="-1" role="dialog" aria-labelledby="editLabel-{{ event.id }}" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+
+              <div class="modal-header">
+                <h5 class="modal-title" id="editLabel-{{ event.id }}">Edit Event</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+              </div>
+
+              <div class="modal-body">
+                <form class="eventForm" method="POST" action="{{ url_for('update_event', event_id=event.id) }}">
+                  <div class="form-group">
+                    <label for="datetime-{{ event.id }}">Date & Time</label>
+                    <input
+                      type="text"
+                      class="form-control datetimepicker"
+                      id="datetime-{{ event.id }}"
+                      placeholder="{{ event.date }} {{ event.time }}" required>
+                    <input type="hidden" name="date" id="hidden-date-{{ event.id }}" value="{{ event.date }}">
+                    <input type="hidden" name="time" id="hidden-time-{{ event.id }}" value="{{ event.time }}">
+                  </div>
+
+                  <div class="form-group">
+                    <label for="eventDescription-{{ event.id }}">Event Description</label>
+                    <textarea class="form-control" id="eventDescription-{{ event.id }}" name="description" rows="3" required>{{ event.description }}</textarea>
+                  </div>
+
+                  <button type="submit" name="action" value="edit" class="btn btn-primary">Save Changes</button>
+                  <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </form>
+              </div>
+
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<!-- JS: jQuery + Bootstrap + Flatpickr -->
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const pad = (num) => num.toString().padStart(2, '0');
+
+    document.querySelectorAll(".datetimepicker").forEach(function (input) {
+      const eventId = input.id.split("-")[1];
+      const hiddenDate = document.getElementById(`hidden-date-${eventId}`);
+      const hiddenTime = document.getElementById(`hidden-time-${eventId}`);
+
+      const initialValue = hiddenDate.value && hiddenTime.value
+        ? `${hiddenDate.value} ${hiddenTime.value}`
+        : "";
+
+      flatpickr(input, {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i",
+        defaultDate: initialValue || null,
+        minDate: "today",
+        time_24hr: true,
+        onReady: function (selectedDates, dateStr, instance) {
+          maybeLimitTime(instance);
+        },
+        onChange: function (selectedDates, dateStr, instance) {
+          maybeLimitTime(instance);
+
+          if (selectedDates.length > 0) {
+            const selected = selectedDates[0];
+            const date = selected.toISOString().split('T')[0];
+            const time = selected.toTimeString().slice(0, 5);
+            hiddenDate.value = date;
+            hiddenTime.value = time;
+          }
+        }
+      });
+
+      function maybeLimitTime(instance) {
+        const selectedDate = instance.selectedDates[0] || instance.latestSelectedDateObj || new Date(instance.input.value);
+        const now = new Date();
+
+        const selectedYMD = selectedDate.toISOString().split('T')[0];
+        const todayYMD = now.toISOString().split('T')[0];
+
+        if (selectedYMD === todayYMD) {
+          const minHours = now.getHours();
+          const minMinutes = now.getMinutes();
+
+          instance.set('minTime', `${pad(minHours)}:${pad(minMinutes)}`);
+        } else {
+          instance.set('minTime', '00:00');
+        }
+      }
+    });
+
+    // form validation to block past datetime
+    document.querySelectorAll(".eventForm").forEach(function (form) {
+      form.onsubmit = function (event) {
+        const eventId = form.querySelector(".datetimepicker").id.split("-")[1];
+        const date = document.getElementById(`hidden-date-${eventId}`).value;
+        const time = document.getElementById(`hidden-time-${eventId}`).value;
+
+        const eventDateTime = new Date(`${date}T${time}`);
+        const now = new Date();
+
+        if (eventDateTime < now) {
+          alert('The event date and time cannot be in the past.');
+          event.preventDefault();
+        }
+      };
+    });
+  });
+</script>
+
+{% endblock %}

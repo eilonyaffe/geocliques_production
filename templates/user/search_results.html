@@ -1,0 +1,41 @@
+{% extends "user/userbase.html" %}
+{% block content %}
+
+<div class="container mt-5 pt-4 text-white">
+  <h3 class="mb-4">Search Results</h3>
+
+  {% if results %}
+    <div class="row">
+      {% for clique in results %}
+        <div class="col-lg-4 col-md-6 mb-4">
+          <div class="card bg-dark text-white h-100 p-3 card-light-text">
+            <h4 class="font-weight-bold" style="font-size: 1.8rem;">{{ clique.name }}</h4>
+            <p><strong>Description:</strong> {{ clique.description }}</p>
+            <p><strong>Admin:</strong> {{ admin_map[clique.id].name }}</p>
+            <p><strong>Visibility:</strong> {{ clique.visibility|capitalize }}</p>
+            <p><strong>Members:</strong> {{ member_counts[clique.id] }}</p>
+            <p><strong>Markers:</strong> {{ marker_counts[clique.id] }}</p>
+
+            {% if clique.id in user_clique_ids %}
+            <button type="button" class="btn btn-secondary font-weight-bold text-dark" disabled>Joined</button>
+          {% else %}
+            {% if clique.visibility == "Protected" %}
+              <button type="button" class="btn btn-warning search-request-btn" data-clique-id="{{ clique.id }}">Request to Join</button>
+            {% else %}
+              <button type="button" class="btn btn-success search-join-btn" data-clique-id="{{ clique.id }}">Join</button>
+            {% endif %}
+          {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>No cliques found matching your search.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/universal.js') }}"></script>
+{% endblock %}

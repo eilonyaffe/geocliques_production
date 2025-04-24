@@ -12,11 +12,11 @@ from utils import get_unique_color, allowed_file, is_valid_password, is_valid_em
     delete_clique, delete_user_from_clique, delete_clique_and_contents
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret-key-goes-here'  # must-have placeholder, can be altered in production
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret')
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///users.db")  # TODO prod
 db.init_app(app)
 
 # Flask-Login setup
@@ -42,6 +42,12 @@ def delete_expired_events():
             db.session.delete(event)
 
         db.session.commit()
+
+
+@app.route('/map_keys.js')  # TODO prod
+def map_keys():
+    key = os.getenv("MAP_THUNDERFOREST_KEY", "")
+    return f"window.MAP_KEYS = {{ thunderforest: '{key}' }};", 200, {'Content-Type': 'application/javascript'}
 
 
 # MAP FUNCTIONS

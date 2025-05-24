@@ -38,7 +38,6 @@ class Clique(db.Model):
     visibility: Mapped[str] = mapped_column(String(200))
     date_created: Mapped[str] = mapped_column(String(100))
     admin_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-    markers_color: Mapped[str] = mapped_column(String(10))
     icon: Mapped[str] = mapped_column(String(100))
 
     users = relationship('CliqueUser', back_populates='clique')

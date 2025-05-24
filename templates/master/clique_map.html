@@ -1,41 +1,11 @@
 {% extends "master/masterbase.html" %}
 {% block head %}
-<title>{{ clique.name }} Markers</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 {% endblock %}
 
 {% block content %}
-<style>
-  html, body {
-    height: 100%;
-    margin: 0;
-  }
-
-  #map-wrapper {
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding-bottom: 80px;
-  }
-
-  #map {
-    width: 90vw;
-    height: 80vh;
-    border: 2px solid #ccc;
-    border-radius: 12px;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-  }
-
-  h2 {
-    text-align: center;
-    margin-top: 20px;
-  }
-</style>
-
-<h2>Markers for Clique: <strong>{{ clique.name }}</strong></h2>
-<div id="map-wrapper">
-  <div id="map"></div>
+<div id="map-wrapper-master">
+  <div id="map-master"></div>
 </div>
 {% endblock %}
 
@@ -43,7 +13,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
 <script>
-  const map = L.map('map').setView([31.0461, 34.8516], 8);
+  const map = L.map('map-master').setView([31.0461, 34.8516], 8);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
@@ -61,11 +31,11 @@
           const reviews = props.reviews;
           const events = props.events;
 
-          let popupContent = `<strong>${title}</strong>`;
+          let popupContent = `<div style="font-family: 'Poppins', sans-serif; word-break: break-word;"><strong>${title}</strong>`;
           popupContent += `<br><span style="color: gold;">★ ${avg.toFixed(2)} (${total} review${total !== 1 ? 's' : ''})</span>`;
 
           if (reviews.length) {
-            popupContent += `<hr><div><strong>Reviews:</strong></div>`;
+            popupContent += `<hr><div><strong>📝 Reviews:</strong></div><div style="max-height: 150px; overflow-y: auto;">`;
             reviews.forEach(r => {
               popupContent += `<div style="margin-top: 4px;"><strong>${r.user}</strong>: <span style="color: gold;">${'★'.repeat(r.stars)}</span>`;
               if (r.commentary) popupContent += `<br><em>${r.commentary}</em>`;
@@ -73,12 +43,16 @@
             });
           }
 
+          popupContent += `</div>`;
+
           if (events.length) {
-            popupContent += `<hr><div><strong>Events:</strong></div>`;
+            popupContent += `<hr><div><strong>🗓️ Events:</strong></div><div style="max-height: 150px; overflow-y: auto;">`;
             events.forEach(e => {
               popupContent += `<div style="margin-top: 4px;"><strong>${e.user}</strong>: ${e.description} (${e.date} ${e.time})</div>`;
             });
           }
+
+          popupContent += `</div></div>`;
 
           return L.marker(latlng).bindPopup(popupContent);
         }

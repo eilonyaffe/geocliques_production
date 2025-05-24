@@ -7,33 +7,12 @@
 {% endblock %}
 
 {% block content %}
-<style>
-  input, textarea {
-    -webkit-font-smoothing: antialiased; 
-    -moz-osx-font-smoothing: grayscale; 
-    text-shadow: none !important; /* remove any text shadow */
-  }
-
-  input[type="text"].flatpickr-input {
-    font-size: 16px; 
-    font-family: Arial, sans-serif;  
-    padding: 10px;  
-    background: white; 
-    border: 1px solid #ccc;  
-    box-shadow: none !important;  /* remove any box shadow effect */
-    outline: none; 
-  }
-
-  .form-group {
-    margin-bottom: 1rem;
-  }
-</style>
-
-<div class="container mt-4">
+<div class="add-event container mt-4">
   <br><br><br>
+  <h3>📆 Create an Event</h3><br>
   <form id="eventForm" method="POST" action="{{ url_for('add_event', marker_id=marker_id, clique_id=clique_id) }}">
     <div class="form-group">
-      <label for="datetime" style="color: white;" class="form-label">Date & Time</label>
+      <label for="datetime" style="color: #2c2c2c;" class="form-label">Date & Time</label>
       <input type="text" class="form-control" id="datetime" placeholder="Select date and time" required>
 
       <input type="hidden" id="date" name="date">
@@ -41,11 +20,12 @@
     </div>
 
     <div class="form-group">
-      <label for="description" style="color: white;" class="form-label">Event description</label>
-      <textarea class="form-control" id="description" name="description" rows="3" placeholder="Describe the event" required></textarea>
+      <label for="description" style="color: #2c2c2c;" class="form-label">Event description</label>
+      <textarea class="form-control" id="description" name="description" rows="3" placeholder="Describe the event" maxlength="500" required></textarea>
+      <div id="charCount" style="color: grey; font-size: 0.9em;">500 characters remaining</div>
     </div>
 
-    <button type="save" class="btn btn-success">Save</button>
+    <button type="save" class="btn btn-secondary" style="background-color: #6c5ce7;">Save</button>
     <a href="{{ url_for('maptest') }}" class="btn btn-secondary">Discard</a>
   </form>
 </div>
@@ -60,13 +40,13 @@
     dateFormat: "Y-m-d H:i",
     minDate: "today",
     time_24hr: true,
-    
+
     onChange: function(selectedDates, dateStr, instance) {
         if (selectedDates.length > 0) {
             const selected = selectedDates[0];
             // Set hidden fields to receive separately
-            document.getElementById("date").value = selected.toISOString().split('T')[0]; 
-            document.getElementById("time").value = selected.toTimeString().slice(0, 5); 
+            document.getElementById("date").value = selected.toISOString().split('T')[0];
+            document.getElementById("time").value = selected.toTimeString().slice(0, 5);
         }
     }
   });
@@ -86,4 +66,13 @@
   };
 </script>
 
+<script>
+  const descriptionInput = document.getElementById('description');
+  const charCountDisplay = document.getElementById('charCount');
+
+  descriptionInput.addEventListener('input', function () {
+    const remaining = 500 - descriptionInput.value.length;
+    charCountDisplay.textContent = `${remaining} characters remaining`;
+  });
+</script>
 {% endblock %}

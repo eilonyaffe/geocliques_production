@@ -2,26 +2,33 @@
 {% block content %}
 
 <div style="height: 100vh; overflow-y: scroll;">
-  <div class="container mt-5 pt-4 text-white">
+  <div class="container mt-5 pt-4">
 
-    <div style="display: flex; gap: 20px;">
-      <div style="flex: 1; padding: 20px;">
-        <h2 class="text-left">Admin Control Room</h2>
-        <h4 class="text-left">Clique's Name: {{ clique.name }}</h4>
-        <div class="d-flex align-items-center">
-          <h5 class="mb-0">Admin:</h5>
-          <span class="ml-2">{{ admin_user.name }}</span>
-        </div>
-      </div>
+    <div class="d-flex flex-column align-items-center text-center pt-4 pb-0">
+      <!-- Clique Name -->
+      <h2 class="mb-3">Clique's Name: {{ clique.name }}</h2>
 
-      <div style="flex: 1; padding: 20px;">
-        <div class="d-flex align-items-center gap-3">
-          <i id="currentIcon" class="bi {{ clique.icon }}" style="font-size: 3rem; cursor: pointer; margin-right: 10px;"
-            data-toggle="modal" data-target="#exampleModal"></i>
-          <span>Clique's icon (click to edit)</span>
-        </div>
+      <!-- Icon and label -->
+      <div class="d-flex align-items-center justify-content-center">
+        <i id="currentIcon"
+           class="bi {{ clique.icon }}"
+           style="font-size: 3rem; cursor: pointer; margin-right: 10px;"
+           data-toggle="modal"
+           data-target="#exampleModal"></i>
+        <span>Clique's icon (click to edit)</span>
       </div>
     </div>
+
+    <form id="update_visibility" method="POST" action="{{ url_for('update_clique_type', clique_id=clique.id) }}">
+      <label for="visibility">Clique Visibility:</label>
+      <select name="visibility" id="visibility" class="form-select">
+        <option value="Private" {% if clique.visibility == 'Private' %}selected{% endif %}>Private</option>
+        <option value="Protected" {% if clique.visibility == 'Protected' %}selected{% endif %}>Protected</option>
+        <option value="Public" {% if clique.visibility == 'Public' %}selected{% endif %}>Public</option>
+      </select>
+
+      <button type="submit" class="btn btn-secondary">Update</button>
+    </form>
 
     <!-- popup modal -->
     <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
@@ -30,7 +37,7 @@
         <div class="modal-content">
 
           <div class="modal-header">
-            <h5 class="modal-title" id="exampleModalLabel">Modal Popup Title</h5>
+            <h5 class="modal-title" id="exampleModalLabel">Choosing Clique Icon</h5>
             <button type="button" class="close" data-dismiss="modal" aria-label="Close">
               <span aria-hidden="true">&times;</span>
             </button>
@@ -40,41 +47,40 @@
             <form id="iconForm" method="POST" action="{{ url_for('update_icon', clique_id=clique.id) }}">
               <div class="form-group">
                 <label class="form-label">
-                  Choose an Icon
-                  <i id="selectedIconLabel" class="bi bi-star-fill" style="font-size: 24px;"></i>
+                  Currently Selected Icon: <i id="selectedIconLabel" class="bi bi-star-fill" style="font-size: 24px;"></i>
                 </label>
 
                 <ul class="nav nav-tabs" id="myTab" role="tablist">
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link active" id="tab-urban-icons" data-bs-toggle="tab" href="#urban-icons" role="tab"
+                    <a class="nav-link active" id="tab-urban-icons" data-toggle="tab" href="#urban-icons" role="tab"
                       aria-controls="urban-icons" aria-selected="true">Urban</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-transportation-icons" data-bs-toggle="tab" href="#transportation-icons"
+                    <a class="nav-link" id="tab-transportation-icons" data-toggle="tab" href="#transportation-icons"
                       role="tab" aria-controls="transportation-icons" aria-selected="false">Transportation</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-shopping-icons" data-bs-toggle="tab" href="#shopping-icons" role="tab"
+                    <a class="nav-link" id="tab-shopping-icons" data-toggle="tab" href="#shopping-icons" role="tab"
                       aria-controls="shopping-icons" aria-selected="false">Shopping</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-nature-icons" data-bs-toggle="tab" href="#nature-icons" role="tab"
+                    <a class="nav-link" id="tab-nature-icons" data-toggle="tab" href="#nature-icons" role="tab"
                       aria-controls="nature-icons" aria-selected="false">Nature</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-object-icons" data-bs-toggle="tab" href="#object-icons" role="tab"
+                    <a class="nav-link" id="tab-object-icons" data-toggle="tab" href="#object-icons" role="tab"
                       aria-controls="object-icons" aria-selected="false">Objects</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-food-icons" data-bs-toggle="tab" href="#food-icons" role="tab"
+                    <a class="nav-link" id="tab-food-icons" data-toggle="tab" href="#food-icons" role="tab"
                       aria-controls="food-icons" aria-selected="false">Food</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-signs-icons" data-bs-toggle="tab" href="#signs-icons" role="tab"
+                    <a class="nav-link" id="tab-signs-icons" data-toggle="tab" href="#signs-icons" role="tab"
                       aria-controls="signs-icons" aria-selected="false">Signs</a>
                   </li>
                   <li class="nav-item" role="presentation">
-                    <a class="nav-link" id="tab-people-icons" data-bs-toggle="tab" href="#people-icons" role="tab"
+                    <a class="nav-link" id="tab-people-icons" data-toggle="tab" href="#people-icons" role="tab"
                       aria-controls="people-icons" aria-selected="false">People</a>
                   </li>
                 </ul>
@@ -82,7 +88,7 @@
                 <div class="tab-content form-group" id="myTabContent">
                   <div class="tab-pane fade show active" id="urban-icons" role="tabpanel"
                     aria-labelledby="tab-urban-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-house" data-icon="bi-house"></i>
                       <i class="bi bi-house-door-fill" data-icon="bi-house-door-fill"></i>
                       <i class="bi bi-house-fill" data-icon="bi-house-fill"></i>
@@ -101,7 +107,7 @@
 
                   <div class="tab-pane fade" id="transportation-icons" role="tabpanel"
                     aria-labelledby="tab-transportation-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-bus-front" data-icon="bi-bus-front"></i>
                       <i class="bi bi-bus-front-fill" data-icon="bi-bus-front-fill"></i>
                       <i class="bi bi-car-front" data-icon="bi-car-front"></i>
@@ -120,7 +126,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="shopping-icons" role="tabpanel" aria-labelledby="tab-shopping-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-bag-fill" data-icon="bi-bag-fill"></i>
                       <i class="bi bi-cart" data-icon="bi-cart"></i>
                       <i class="bi bi-cart-fill" data-icon="bi-cart-fill"></i>
@@ -138,7 +144,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="nature-icons" role="tabpanel" aria-labelledby="tab-nature-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-tree-fill" data-icon="bi-tree-fill"></i>
                       <i class="bi bi-luggage-fill" data-icon="bi-luggage-fill"></i>
                       <i class="bi bi-cloud-fill" data-icon="bi-cloud-fill"></i>
@@ -168,7 +174,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="object-icons" role="tabpanel" aria-labelledby="tab-object-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-book-fill" data-icon="bi-book-fill"></i>
                       <i class="bi bi-laptop" data-icon="bi-laptop"></i>
                       <i class="bi bi-gift" data-icon="bi-gift"></i>
@@ -201,7 +207,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="food-icons" role="tabpanel" aria-labelledby="tab-food-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-cup-fill" data-icon="bi-cup-fill"></i>
                       <i class="bi bi-cup-hot-fill" data-icon="bi-cup-hot-fill"></i>
                       <i class="bi bi-cup-straw" data-icon="bi-cup-straw"></i>
@@ -211,7 +217,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="signs-icons" role="tabpanel" aria-labelledby="tab-signs-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-gender-ambiguous" data-icon="bi-gender-ambiguous"></i>
                       <i class="bi bi-gender-female" data-icon="bi-gender-female"></i>
                       <i class="bi bi-gender-male" data-icon="bi-gender-male"></i>
@@ -236,7 +242,7 @@
                   </div>
 
                   <div class="tab-pane fade" id="people-icons" role="tabpanel" aria-labelledby="tab-people-icons">
-                    <div class="icon-grid" style="color: black;">
+                    <div class="icon-grid" style="color: #2c2c2c;">
                       <i class="bi bi-person-heart icon-item" data-icon="bi-person-heart"></i>
                       <i class="bi bi-person-slash icon-item" data-icon="bi-person-slash"></i>
                       <i class="bi bi-people" data-icon="bi-people"></i>
@@ -253,8 +259,8 @@
               <!-- hidden input to store the selected icon -->
               <input type="hidden" id="selectedIconInput" name="selectedIcon">
 
-              <button type="submit" name="action" value="edit" class="btn btn-primary">Save Changes</button>
-              <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+              <button type="submit" name="action" value="edit" class="btn btn-secondary">Save Changes</button>
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
             </form>
 
           </div>
@@ -263,12 +269,18 @@
     </div>
 
     <!-- users table -->
-    <h4 class="mt-5">Members in Clique</h4>
-    <div class="table-responsive">
-      <table class="table table-dark table-striped text-center">
+    <h4 class="mt-5">👥 Members in Clique</h4>
+    <div class="table-responsive mt-3">
+      <table class="table modern-members-table text-center">
         <thead>
           <tr>
-            <th>Name</th>
+            <th>
+              <span id="nameFilterToggle" style="cursor: pointer;">Name 🔍</span>
+              <div id="nameFilterBox" style="display: none; margin-top: 6px;">
+                <input type="text" id="nameSearchInput" class="form-control form-control-sm" placeholder="Search name..." oninput="filterByName()" />
+                <button class="btn btn-sm btn-secondary mt-1" onclick="resetNameFilter()">Reset</button>
+              </div>
+            </th>
             <th>Reviews Added</th>
             <th>Average Rating</th>
             <th>User Content</th>
@@ -291,11 +303,11 @@
             <td>{{ user.average_rating }}</td>
 
             <td>
-              <div class="d-flex flex-column align-items-center" style="gap: 6px;">
+              <div class="d-flex flex-column align-items-center gap-1">
                 <a href="{{ url_for('user_reviews_map', user_id=user.id, clique_id=clique.id) }}"
-                  class="btn btn-sm btn-light">All Reviews</a>
+                  class="btn btn-sm btn-outline-secondary"><i class="bi bi-chat-square-text"></i> All Reviews</a>
                 <a href="{{ url_for('user_events_map', user_id=user.id, clique_id=clique.id) }}"
-                  class="btn btn-sm btn-light">All Events</a>
+                  class="btn btn-sm btn-outline-secondary"><i class="bi bi-calendar-event"></i> All Events</a>
               </div>
             </td>
 
@@ -303,70 +315,24 @@
               <div class="action-buttons d-flex flex-column align-items-center" style="gap: 6px;">
                 <form action="{{ url_for('kick_user', clique_id=clique.id, user_id=user.id) }}" method="POST"
                   onsubmit="return confirm('Kicking the user will remove them from the clique and delete all their reviews and events. If any marker has only their review, it will also be deleted. However, they can rejoin later unless banned. Are you sure?')">
-                  <button type="submit" class="btn btn-sm btn-warning">Kick User</button>
+                  <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-person-dash"></i> Kick User</button>
                 </form>
 
                 <form action="{{ url_for('ban_user', clique_id=clique.id, user_id=user.id) }}" method="POST"
                   onsubmit="return confirmBanReason(this);">
                   <input type="hidden" name="reason" />
-                  <button type="submit" class="btn btn-sm btn-danger">Ban User</button>
-                </form>
-
-                <form action="{{ url_for('send_admin_invitation', clique_id=clique.id, user_id=user.id) }}" method="POST"
-                  onsubmit="return confirm('Send an admin invitation to this user?');">
-                  <button type="submit" class="btn btn-sm btn-info">Make Admin Instead</button>
+                  <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-person-slash"></i> Ban User</button>
                 </form>
 
                 <!-- report user button and popup -->
-                <button type="button" class="btn btn-sm btn-outline-danger" data-toggle="modal" data-target="#reportModal-{{ user.id }}">
-                  Report User
+                <button type="button" class="btn btn-sm btn-outline-danger" data-toggle="modal" data-target="#reportModal-{{ user.id }}" data-backdrop="static" data-keyboard="false">
+                  <i class="bi bi-flag"></i> Report User
                 </button>
 
-                <div class="modal fade" id="reportModal-{{ user.id }}" tabindex="-1" role="dialog" aria-labelledby="reportModalLabel" aria-hidden="true">
-                  <div class="modal-dialog" role="document">
-                    <form method="POST" action="{{ url_for('report_user') }}">
-                      <input type="hidden" name="user_id" value="{{ user.id }}">
-                      <input type="hidden" name="clique_id" value="{{ clique.id }}">
-                      <div class="modal-content text-dark">
-                        <div class="modal-header">
-                          <h5 class="modal-title">Report {{ user.name }}</h5>
-                          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                            <span>&times;</span>
-                          </button>
-                        </div>
-                        <div class="modal-body">
-                          <p>Select reason(s) for the report:</p>
-                          <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
-                            <label for="bot-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Bot-like activity</label>
-                            <div style="flex-shrink: 0;">
-                              <input type="checkbox" name="reasons" value="bot like report" id="bot-{{ user.id }}" style="margin: 0;">
-                            </div>
-                          </div>
-
-                          <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
-                            <label for="bias-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Overwhelmingly negative/positive</label>
-                            <div style="flex-shrink: 0;">
-                              <input type="checkbox" name="reasons" value="overwhelming bias report" id="bias-{{ user.id }}" style="margin: 0;">
-                            </div>
-                          </div>
-
-                          <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
-                            <label for="hurtful-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Hurtful language</label>
-                            <div style="flex-shrink: 0;">
-                              <input type="checkbox" name="reasons" value="hurtful language report" id="hurtful-{{ user.id }}" style="margin: 0;">
-                            </div>
-                          </div>
-
-                        </div>
-                        <div class="modal-footer">
-                          <button type="submit" class="btn btn-danger">Submit Report</button>
-                          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                        </div>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-
+                <form action="{{ url_for('send_admin_invitation', clique_id=clique.id, user_id=user.id) }}" method="POST"
+                  onsubmit="return confirm('Send an admin invitation to this user?');">
+                  <button type="submit" class="btn btn-sm btn-info" style="padding: 5px 10px; font-size: 0.9rem; border-radius: 16px;">Make Admin Instead</button>
+                </form>
               </div>
             </td>
           </tr>
@@ -376,11 +342,57 @@
       </table>
     </div>
 
+    {% for user in clique_users %}
+    <div class="modal fade" id="reportModal-{{ user.id }}" tabindex="-1" role="dialog" aria-labelledby="reportModalLabel" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <form method="POST" action="{{ url_for('report_user') }}">
+          <input type="hidden" name="user_id" value="{{ user.id }}">
+          <input type="hidden" name="clique_id" value="{{ clique.id }}">
+          <div class="modal-content text-dark">
+            <div class="modal-header">
+              <h5 class="modal-title">Want to report {{ user.name }} ?</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span>&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              <p>Select reason(s) for the report:</p>
+              <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
+                <label for="bot-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Bot-like activity</label>
+                <div style="flex-shrink: 0;">
+                  <input type="checkbox" name="reasons" value="bot like report" id="bot-{{ user.id }}" style="margin: 0;">
+                </div>
+              </div>
+
+              <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
+                <label for="bias-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Overwhelmingly negative/positive</label>
+                <div style="flex-shrink: 0;">
+                  <input type="checkbox" name="reasons" value="overwhelming bias report" id="bias-{{ user.id }}" style="margin: 0;">
+                </div>
+              </div>
+
+              <div class="d-flex align-items-center mb-2" style="padding: 4px 12px;">
+                <label for="hurtful-{{ user.id }}" class="mb-0" style="text-align: left; flex: 1;">Hurtful language</label>
+                <div style="flex-shrink: 0;">
+                  <input type="checkbox" name="reasons" value="hurtful language report" id="hurtful-{{ user.id }}" style="margin: 0;">
+                </div>
+              </div>
+
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-secondary">Submit Report</button>
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
 
     <!-- banned users table -->
-    <h4 class="mt-5">Banned Users</h4>
-    <div class="table-responsive">
-      <table class="table table-dark table-striped text-center">
+    <h4 class="mt-5">🚫 Banned Users</h4>
+    <div class="table-responsive mt-3">
+      <table class="table modern-members-table text-center">
         <thead>
           <tr>
             <th>Name</th>
@@ -399,7 +411,7 @@
             <td>
               <form action="{{ url_for('unban_user', clique_id=clique.id, user_id=banned.user_id) }}" method="POST"
                 onsubmit="return confirm('Are you sure you want to unban this user?');">
-                <button type="submit" class="btn btn-sm btn-danger">Unban</button>
+                <button type="submit" class="btn btn-sm btn-unban"><i class="bi bi-person-check"></i> Unban</button>
               </form>
             </td>
           </tr>
@@ -414,12 +426,13 @@
     </div>
 
     <!-- analytics on the clique -->
-    <div class="mt-5 text-white">
+    <div class="mt-5">
+      <h4 class="mt-5">📈 Recent Clique Activity</h4>
       <div class="d-flex justify-content-end align-items-center mb-3">
         <span class="mr-2">Summarize activity in the past:</span>
 
-        {% set active_style = "btn btn-sm btn-danger" %}
-        {% set default_style = "btn btn-sm btn-info" %}
+        {% set active_style = "btn btn-sm btn-chosen" %}
+        {% set default_style = "btn btn-sm btn-not-chosen" %}
         <a href="?range=week" class="btn btn-sm mr-2 {{ active_style if time_range == 'week' else default_style }}">
           Week
         </a>
@@ -470,6 +483,22 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script>
+  document.getElementById('update_visibility').addEventListener('submit', function(event) {
+    const selectedVisibility = document.getElementById('visibility').value;
+    const currentVisibility = "{{ clique.visibility }}";
+
+    // if the current visibility is 'Protected' or 'Public' and the user tries to make it 'Private'
+    if ((currentVisibility === 'Protected' || currentVisibility === 'Public') && selectedVisibility === 'Private') {
+      const confirmation = confirm('Are you sure you want to make this clique private? This action will prevent new members from joining and may affect the visibility of your clique.');
+
+      if (!confirmation) {
+        event.preventDefault();
+      }
+    }
+  });
+</script>
+
 <script>
   function confirmBanReason(form) {
     const reason = prompt("Enter reason for ban (max 100 characters):");
@@ -542,5 +571,56 @@
   });
 </script>
 
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const toggle = document.getElementById("nameFilterToggle");
+    const box = document.getElementById("nameFilterBox");
+
+    toggle.addEventListener("click", () => {
+      box.style.display = box.style.display === "none" ? "block" : "none";
+    });
+  });
+
+  function filterByName() {
+    const input = document.getElementById("nameSearchInput").value.trim().toLowerCase();
+    const rows = document.querySelectorAll(".modern-members-table tbody tr");
+
+    rows.forEach((row) => {
+      const name = row.cells[0].innerText.toLowerCase();
+      row.style.display = name.startsWith(input) ? "" : "none";
+    });
+  }
+
+  function resetNameFilter() {
+    document.getElementById("nameSearchInput").value = "";
+    const rows = document.querySelectorAll(".modern-members-table tbody tr");
+    rows.forEach(row => row.style.display = "");
+  }
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("form[action='{{ url_for('report_user') }}']").forEach((form) => {
+      form.addEventListener("submit", function (e) {
+        const checkboxes = form.querySelectorAll("input[type='checkbox'][name='reasons']");
+        const atLeastOneChecked = Array.from(checkboxes).some(cb => cb.checked);
+        if (!atLeastOneChecked) {
+          e.preventDefault();
+          alert("Please select at least one reason for the report.");
+        }
+      });
+    });
+
+    $(document).on('hide.bs.modal', '.modal', function () {
+        var $focused = $(document).find(':focus');
+        const form = $(this).find("form")[0];
+
+        if ($focused.length && $(this).has($focused).length) { // checks if the modal contains the focused element and remove focus
+          $focused.blur();
+        }
+        form.reset(); // resets the form when modal is closed
+    });
+  });
+</script>
 
 {% endblock %}

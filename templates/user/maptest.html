@@ -14,23 +14,30 @@
 <div id="map"></div>
 
 <div id="clique-filter-box">
-  <h4>Filter by Clique</h4>
-  <div id="clique-filter-list">
-    {% for cu in current_user.cliques %}
-      <div class="filter-item">
-        <label class="filter-label">
-          <span class="clique-name">{{ cu.clique.name }}</span>
-          <input name="checkbox" type="checkbox" class="clique-checkbox" value="{{ cu.clique.id }}" checked>
-          <span class="custom-checkmark">✔</span>
-        </label>
-      </div>
-    {% endfor %}
+  <div class="clique-filter-inner">
+    <h4>Filter by Clique</h4>
+    <div id="clique-filter-list">
+      {% if current_user.cliques %}
+        {% for cu in current_user.cliques %}
+          <div class="filter-item">
+            <label class="filter-label">
+              <span class="clique-name">{{ cu.clique.name }}</span>
+              <input name="checkbox" type="checkbox" class="clique-checkbox" value="{{ cu.clique.id }}" checked>
+              <span class="custom-checkmark">✔</span>
+            </label>
+          </div>
+        {% endfor %}
+      {% else %}
+          <p style="text-align: center; font-size: 14px; color: grey;">No cliques found. Join an existing one or create your own to get started!</p>
+      {% endif %}
+    </div>
   </div>
-
-  <div class="filter-controls">
-    <button id="select-all" class="btn btn-sm btn-primary">Select All</button>
-    <button id="clear-all" class="btn btn-sm btn-danger">Clear All</button>
-  </div>
+  {% if current_user.cliques %}
+    <div class="filter-controls">
+      <button id="select-all" class="btn btn-sm btn-secondary" style="background-color: #6c5ce7; color: #fff;">Select All</button>
+      <button id="clear-all" class="btn btn-sm btn-secondary">Clear All</button>
+    </div>
+  {% endif %}
 </div>
 
 <a href="{{ url_for('select_layer') }}" id="layer-button" class="add-button layer-button" title="Choose map layer">
@@ -58,7 +65,7 @@
   window.selectedMapLayer = "{{ selected_layer }}";
 </script>
 
-<script src="{{ url_for('map_keys') }}"></script>
+<script src="{{ url_for('static', filename='files/map_keys.js') }}"></script>
 <script src="{{ url_for('static', filename='js/universal.js') }}"></script>
 
 <script>
@@ -69,6 +76,5 @@
     map.style.top = navbarHeight + 'px';
   });
 </script>
-<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 
 {% endblock %}

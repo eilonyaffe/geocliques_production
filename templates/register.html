@@ -11,13 +11,13 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          {% if category in ['danger', 'error'] %}
+          {% if category in ['danger'] %}
             <div class="alert alert-{{ category }}">{{ message }}</div>
           {% endif %}
         {% endfor %}
       {% endif %}
-    {% endwith %}  
-    
+    {% endwith %}
+
     <form action="{{ url_for('register') }}" method="post">
       <div class="input-box">
         <i class="bi bi-person"></i>

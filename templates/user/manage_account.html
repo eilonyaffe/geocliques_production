@@ -1,117 +1,39 @@
 {% extends "user/userbase.html" %}
 {% block content %}
 
-<style>
-    body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background-color: #f9f9f9;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        margin: 0;
-    }
+<div class="manage_account">
+    <div class="container mt-9">
+        <h2>Delete Your Account</h2>
+        <p class="warning">⚠️ This action is permanent and cannot be undone.</p>
+        <button class="delete-btn" onclick="openModal()">Delete My Account</button>
+    </div>
 
-    .container {
-        background-color: #fff;
-        padding: 40px;
-        border-radius: 12px;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-        text-align: center;
-        max-width: 400px;
-    }
+    <!-- confirmation modal -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+        <h3>Are you sure?</h3>
+        <p>
+            Deleting your account will erase all your reviews, personal data, and transfer admin control to other users in any cliques you’ve managed. This cannot be recovered.
+        </p>
 
-    h2 {
-        margin-bottom: 10px;
-        color: #333;
-    }
+        <!-- Hidden password section -->
+        <div id="passwordSection" style="display: none; margin-top: 1rem;">
+            <label for="deletePassword">Enter your password to confirm:</label>
+            <input type="password" id="deletePassword" class="form-control mt-2" placeholder="••••••••" />
+        </div>
 
-    p.warning {
-        color: #e74c3c;
-        margin-bottom: 30px;
-    }
-
-    .delete-btn {
-        background-color: #e74c3c;
-        color: white;
-        border: none;
-        padding: 12px 20px;
-        font-size: 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.3s ease;
-    }
-
-    .delete-btn:hover {
-        background-color: #c0392b;
-    }
-
-    .modal {
-        display: none;
-        position: fixed;
-        z-index: 999;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0,0,0,0.5);
-    }
-
-    .modal-content {
-        background-color: #fff;
-        margin: 15% auto;
-        padding: 30px;
-        border-radius: 10px;
-        width: 90%;
-        max-width: 400px;
-        text-align: center;
-    }
-
-    .modal-buttons {
-        margin-top: 20px;
-    }
-
-    .modal-buttons button {
-        padding: 10px 16px;
-        margin: 0 10px;
-        border: none;
-        border-radius: 6px;
-        font-size: 14px;
-        cursor: pointer;
-    }
-
-    .cancel-btn {
-        background-color: #ccc;
-    }
-
-    .confirm-delete {
-        background-color: #e74c3c;
-        color: #fff;
-    }
-</style>
-
-
-<div class="container mt-5">
-    <h2>Delete Your Account</h2>
-    <p class="warning">⚠️ This action is permanent and cannot be undone.</p>
-    <button class="delete-btn" onclick="openModal()">Delete My Account</button>
-</div>
-
-<!-- confirmation modal -->
-<div class="modal" id="deleteModal">
-    <div class="modal-content">
-    <h3>Are you sure?</h3>
-    <p>Deleting your account will erase all your reviews, personal data, and transfer admin control to other users in any cliques you’ve managed. This cannot be recovered.</p>
-    <div class="modal-buttons">
-        <button class="cancel-btn" onclick="closeModal()">Cancel</button>
-        <form id="deleteForm" method="POST" action="{{ url_for('delete_account') }}" style="display: inline;">
+        <div class="modal-buttons mt-3">
+            <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+            <form id="deleteForm" method="POST" action="{{ url_for('delete_account') }}" style="display: inline;">
             <button type="button" class="confirm-delete" onclick="askForPassword()">Yes, Delete</button>
             <input type="hidden" name="confirmed" value="true">
-        </form>
-    </div>
+            </form>
+        </div>
+        </div>
     </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
     const modal = document.getElementById('deleteModal');
@@ -122,6 +44,13 @@
 
     function closeModal() {
         modal.style.display = 'none';
+
+        // reset password input and hide it
+        const passwordInput = document.getElementById("deletePassword");
+        const passwordSection = document.getElementById("passwordSection");
+
+        passwordInput.value = "";
+        passwordSection.style.display = "none";
     }
 
     // close modal if user clicks outside it
@@ -132,33 +61,40 @@
     };
 
     function askForPassword() {
-        const password = prompt("Please enter your password to confirm deletion:");
+        const passwordSection = document.getElementById("passwordSection");
+        const passwordInput = document.getElementById("deletePassword");
 
-        // if the user clicked cancel button
-        if (password === null) {
-            closeModal();
-            return; // do nothing and close the prompt
+        if (passwordSection.style.display === "none") {
+            passwordSection.style.display = "block";
+            passwordInput.focus();
+            return;
         }
 
-        const response = fetch('verify-password', {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ password: password })
-        }).then(res => res.json())
-            .then(data => {
-                if (data.valid) {
-                    document.getElementById('deleteForm').submit();
-                }
-                else {
-                    alert('Incorrect password. Please try again.');
-                    askForPassword();
-                }
-            });
+        const password = passwordInput.value;
 
+        // if empty, just return
+        if (!password) {
+            alert("Please enter your password to continue.");
+            return;
+        }
+
+        fetch('verify-password', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: password })
+        })
+            .then(res => res.json())
+            .then(data => {
+            if (data.valid) {
+                document.getElementById('deleteForm').submit();
+            } else {
+                alert('Incorrect password. Please try again.');
+                passwordInput.value = '';
+                passwordInput.focus();
+            }
+            });
     }
 </script>
-  
+
 
 {% endblock %}

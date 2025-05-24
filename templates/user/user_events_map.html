@@ -3,45 +3,20 @@
 <title>{{ user.name }}'s Reviewed Markers</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-<style>
-  #map-wrapper {
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding-bottom: 80px;
-  }
-
-  #map {
-    width: 90vw;
-    height: 80vh;
-    border: 2px solid #ccc;
-    border-radius: 12px;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-  }
-
-  .h2 {
-    text-align: center;
-    margin-top: 20px;
-  }
-</style>
 {% endblock %}
 
 {% block content %}
-<h2>Markers Reviewed by {{ user.name }}</h2>
-<div id="map-wrapper">
-  <div id="map"></div>
+<div id="map-content-wrapper">
+  <div id="map-content"></div>
 </div>
-{% endblock %} 
+{% endblock %}
 
 {% block scripts %}
-<script>window.disableUniversalMap = true;</script>
 <script>
   const features = {{ features | tojson }};
 
   document.addEventListener("DOMContentLoaded", () => {
-    const map = L.map('map').setView([31.0461, 34.8516], 8);
+    const map = L.map('map-content').setView([31.0461, 34.8516], 8);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
@@ -53,12 +28,12 @@
         const created = feature.properties.is_creator;
         const events = feature.properties.events;
 
-        let popupContent = `<strong>${title}</strong>`;
+        let popupContent = `<div style="font-family: 'Poppins', sans-serif; word-break: break-word;"><strong>${title}</strong>`;
         if (created) popupContent += `<br><em>(created by this user)</em>`;
         if (events.length) {
-            popupContent += `<hr><div><strong>Events:</strong></div>`;
+            popupContent += `<hr><div><strong>🗓️ Events:</strong></div>`;
             events.forEach(e => {
-              popupContent += `<div style="margin-top: 4px;"><strong>${e.user}</strong>: ${e.description} (${e.date} ${e.time})</div>`;
+              popupContent += `<div style="margin-top: 4px;"><strong>${e.user}</strong>: ${e.description} (${e.date} ${e.time})</div></div>`;
             });
           }
 

@@ -20,7 +20,10 @@ function attachNotificationHandlers() {
               .then(data => {
                 alert(data.message || "Joined!");
                 return fetch(`/delete_notification/${notifId}`, { method: "POST" });
-              });
+              })
+              .then(() => {
+                location.reload(); //reload the page to show the new clique on the map
+              })
           }
 
           if (type === "invitation protected") {
@@ -35,7 +38,12 @@ function attachNotificationHandlers() {
 
           throw new Error("Unsupported notification type.");
         })
-        .then(() => refreshNotificationList())
+        .then(() => {
+          button.closest(".notification-item").remove();
+          if (document.querySelectorAll('.notification-item').length === 0) {
+            refreshNotificationList();
+          }
+        })
         .catch(err => {
           console.error("Join error:", err);
           alert("Something went wrong while processing the invitation.");
@@ -54,6 +62,9 @@ function attachNotificationHandlers() {
       fetch(`/delete_notification/${notifId}`, { method: "POST" })
         .then(() => {
           button.closest(".notification-item").remove();
+          if (document.querySelectorAll('.notification-item').length === 0) {
+            refreshNotificationList();
+          }
         });
     });
   });
@@ -69,6 +80,9 @@ function attachNotificationHandlers() {
         .then(data => {
           alert(data.message || "Request accepted.");
           button.closest(".notification-item").remove();
+          if (document.querySelectorAll('.notification-item').length === 0) {
+            refreshNotificationList();
+          }
         });
     });
   });
@@ -81,6 +95,9 @@ function attachNotificationHandlers() {
       fetch(`/delete_notification/${notifId}`, { method: "POST" })
         .then(() => {
           button.closest(".notification-item").remove();
+          if (document.querySelectorAll('.notification-item').length === 0) {
+            refreshNotificationList();
+          }
         });
     });
   });
@@ -99,6 +116,9 @@ function attachNotificationHandlers() {
         })
         .then(() => {
           button.closest(".notification-item").remove();
+          if (document.querySelectorAll('.notification-item').length === 0) {
+            refreshNotificationList();
+          }
         });
     });
   });
@@ -131,9 +151,10 @@ function refreshNotificationList() {
         const cliqueName = notif.clique_name;
         const cliqueId = notif.clique_id;
         let text = "";
+        const cliqueVisibility = notif.visibility == "Public" ? "public" : notif.visibility == "Private" ? "private" : "protected";
 
         if (type === "invitation") {
-          text = `Invited to join public clique <strong>${cliqueName}</strong>`;
+          text = `Invited to join ${cliqueVisibility} clique <strong>${cliqueName}</strong>`;
           item.innerHTML = `
             ${text}
             <div class="notification-actions">
@@ -166,6 +187,14 @@ function refreshNotificationList() {
               <button class="btn btn-sm btn-success accept-request" data-id="${notif.id}" data-clique="${cliqueId}">Accept</button>
               <button class="btn btn-sm btn-danger decline-request" data-id="${notif.id}">Decline</button>
             </div>`;
+        }
+        else if (type == "accept invitation") {
+          item.innerHTML = `
+            <div>Your request to join <strong>${cliqueName}</strong> has been accepted by the admin.</div>
+            <div class="notification-actions">
+              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Okay</button>
+            </div>
+          `;
         }
         else if (type === "ban") {
           item.innerHTML = `
@@ -204,6 +233,15 @@ function refreshNotificationList() {
             </div>
           `;
         }
+        else if (type === "admin replacement") {
+          item.innerHTML = `
+            <div>You have been made the admin of <strong>${cliqueName}</strong> because the previous admin deleted their account.</div>
+            <div class="notification-actions">
+              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Okay</button>
+            </div>
+          `;
+        }
+
         list.appendChild(item);
       });
 

@@ -80,6 +80,43 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
     });
   }
 
+  // deletes lingering <br> or spaces for text divs in loadMarkers
+  document.addEventListener('input', function (e) {
+    if (e.target.classList.contains('review-editable')) {
+
+      if (e.target.innerText.trim() === '') {
+        e.target.innerHTML = '';
+      }
+    }
+  });
+
+  function limitReviewText(el, markerId) {
+    const maxChars = 500;
+    const text = el.innerText;
+
+    if (text.length > maxChars) {
+      el.innerText = text.substring(0, maxChars);
+      // moves cursor to the end after truncation
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    const remaining = maxChars - el.innerText.length;
+    const charCountEl = document.getElementById(`charCount-${markerId}`);
+    if (charCountEl) {
+      charCountEl.textContent = `${remaining} characters remaining`;
+    }
+  }
+
+  function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength).trim() + '...';
+  }
+
   function loadMarkers() {
     fetch('/geojson-features')
       .then(response => response.json())
@@ -94,6 +131,7 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
           filter: feature => selectedCliqueIds.includes(feature.properties.clique_id),
           pointToLayer: function (feature, latlng) {
             const desc = feature.properties.description;
+            const cliqueName = feature.properties.clique_name;
             const markerId = feature.properties.marker_id;
             const avg = feature.properties.average_review.toFixed(1);
             const total = feature.properties.total_reviews;
@@ -107,14 +145,14 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
             const cliqueId = feature.properties.clique_id;
 
             let popupContent = `
-              <div>
-                <strong>${desc}</strong><br>
-                <div style="margin: 5px 0;">Average Rating: ${stars} (${avg} / 5 from ${total} reviews)</div>
+              <div style="font-family: 'Poppins', sans-serif;">
+                <strong>${desc} <span style="color: gray; font-weight: normal;">(${cliqueName})</span></strong><br>
+                <div style="margin: 5px 0;">⚖️ Average Rating: ${stars} (${avg} / 5 from ${total} reviews)</div>
             `;
 
             if (userReview) {
               const userStars = getStarDisplay(userReview.stars);
-              const userComment = userReview.commentary ? `"${userReview.commentary}"` : '';
+              const userComment = userReview.commentary ? `"${truncateText(userReview.commentary, 40)}"`  : '';
               popupContent += `
                 <hr>
                 <div style="color: gray;">
@@ -123,37 +161,44 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
                   ${userComment}
                 </div>
                 <a href="/edit-review/${markerId}">
-                  <button class="btn btn-warning" style="margin-top:5px;">Edit Review</button>
+                  <button class="btn btn-info-small" style="margin-top:5px;">Edit Review</button>
                 </a>
               `;
             } else {
               popupContent += `
                 <label>Leave a review:</label><br>
-                <div class="rating-stars" data-marker="${markerId}" data-selected="0">
+                <div class="rating-stars" data-marker="${markerId}" data-selected="0" style="padding-bottom: 5px">
                   ${[1, 2, 3, 4, 5].map(i => `<span class="review-star" data-value="${i}">&#9733;</span>`).join('')}
-                </div><br>
-                <textarea id="review-comment-${markerId}" rows="3" placeholder="Your review (optional)"></textarea><br>
-                <button onclick="submitReview(${markerId})" class="btn btn-primary">Submit Review</button>
+                </div>
+                <div id="review-comment-${markerId}" class="review-editable" contenteditable="true"
+                    oninput="limitReviewText(this, ${markerId})"
+                    placeholder="Your review (optional)"
+                    style="border: 1px solid #ccc; padding: 6px; min-height: 60px;"></div>
+                <div id="charCount-${markerId}" style="font-size: 0.85em; color: grey;">500 characters remaining</div>
+                <br>
+                <button onclick="submitReview(${markerId})" class="btn btn-primary" style="padding: 4px 10px; font-size: 14px;">
+                  Submit Review
+                </button>
               `;
             }
+
 
             if (otherReviews.length > 0) {
               popupContent += `
                 <hr>
-                <div style="max-height: 120px; overflow-y: auto;">
-                  <strong>Other Reviews:</strong><br>
-                  <ul style="padding-left: 18px;">
+                <div><strong>📝 Other Reviews:</strong></div><div style="max-height: 140px; overflow-y: auto;">
+                  <ul style="padding-left: 18px; margin-top:5px;">
               `;
               otherReviews.forEach(r => {
                 popupContent += `
-                  <li style="display: flex; align-items: flex-start; padding: 10px 0 0 0;">
+                  <li style="display: flex; align-items: flex-start; padding-top: 8px; word-break: break-word;">
                   ${
                     r.user_pic !== 'default.jpg'
-                      ? `<img src="/static/uploads/${r.user_pic}"
+                      ? `<img src="/static/files/avatars_profile_pics/${r.user_pic}"
                               alt="User"
                               style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; margin-right: 10px;">`
                       : `<i class="bi bi-person-circle"
-                             style="font-size: 2.05rem; color: #888; margin-right: 10px; width: 32px; height: 32px;"></i>`
+                             style="font-size: 2rem; color: #888; margin-right: 10px;"></i>`
                   }
                     <div>
                       ${getStarDisplay(r.stars)}
@@ -162,7 +207,6 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
                     </div>
                   </li>`;
               });
-
               popupContent += `
                   </ul>
                 </div>
@@ -187,63 +231,46 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
               return eventDate >= today && eventDate <= endDate;
             });
 
+            const allEventsSorted = userEvents.concat(otherEvents)
+              .map(e => ({
+                ...e,
+                dateObj: new Date(e.date)
+              }))
+              .sort((a, b) => a.dateObj - b.dateObj);
 
-            if (userEvents.length > 0) {
+            if (allEventsSorted.length > 0) {
               popupContent += `
                 <hr>
-                <div style="color: blue; max-height: 120px; overflow-y: auto;">
-                  <strong>Your Events:</strong><br>
+                <div><strong>🗓️ Events:</strong></div><div style="color: blue; max-height: 100px; overflow-y: auto;">
+                  <ul style="margin-top: 5px; list-style: none; padding: 0;">
               `;
-              userEvents.forEach(e => {
-                popupContent += `
-                  <ul style="text-align: center;">
-                    Your event is coming up on ${e.date} at ${e.time}.<br>
-                    Description: ${e.description}.
-                  </ul>`;
-              });
 
-              popupContent += `
-                <div style="display: flex; justify-content: center; margin-top: 3px;">
-                  <a class="btn btn-info" href="/edit-events/${markerId}/${cliqueId}">Edit events</a>
-                </div>
-                </div>
-              `;
-            }
+              allEventsSorted.forEach(e => {
+                  const isOwnEvent = e.is_own_event; // assuming you pass a flag for user's own events
+                  const eventOwnerText = isOwnEvent
+                    ? `<strong>Your</strong> event on`
+                    : (e.user ? `<strong>${e.user}</strong>'s event on` : "Event on");
 
-            if (otherEvents.length > 0) {
-              popupContent += `
-                <hr>
-                <div style="color: blue; max-height: 120px; overflow-y: auto;">
-                  <strong>Events:</strong><br>
-              `;
-              otherEvents.forEach(e => {
-                popupContent += `
-                  <ul style="display: flex; justify-content: center; align-items: flex-start; list-style: none; padding: 5px 0 0 0;">
-                    <li style="display: flex; align-items: flex-start; max-width: 600px;">
-                      ${
-                        e.user_pic !== 'default.jpg'
-                          ? `<img src="/static/uploads/${e.user_pic}"
-                                  alt="User"
-                                  style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">`
-                          : `<i class="bi bi-person-circle"
-                                style="font-size: 2.05rem; color: #888; margin-right: 12px; width: 32px; height: 32px;"></i>`
-                      }
-                      <div style="text-align: center;">
-                        ${e.user}'s event is coming up on <strong>${e.date}</strong> at <strong>${e.time}</strong>.<br>
-                        Description: ${e.description}.
-                      </div>
+                  popupContent += `
+                    <li style="text-align: center; margin-top: 5px; word-break: break-word;">
+                      ${eventOwnerText} <strong>${e.date}</strong> at <strong>${e.time}</strong><br>
+                      ${e.description}
                     </li>
-                  </ul>`;
-              });
+                  `;
+                });
 
               popupContent += `
+                  </ul>
                 </div>
               `;
             }
 
             popupContent += `
-                <a class="btn btn-info" href="/add-event/${markerId}/${cliqueId}">Add event</a>
-                 `
+              <div style="display: flex; justify-content: center; margin-top: 8px;">
+                <a class="btn btn-info-small" style="margin-right: 8px;" href="/add-event/${markerId}/${cliqueId}">Add Event</a>
+                <a class="btn btn-info-small" href="/edit-events/${markerId}/${cliqueId}">Edit Events</a>
+              </div>
+            `;
 
             popupContent += `</div>`;
 
@@ -296,7 +323,7 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
   function submitReview(markerId) {
     const container = document.querySelector(`.rating-stars[data-marker="${markerId}"]`);
     const selected = parseInt(container.getAttribute("data-selected") || "0");
-    const commentary = document.getElementById(`review-comment-${markerId}`).value.trim();
+    const commentary = document.getElementById(`review-comment-${markerId}`).innerText.trim();
 
     if (selected === 0) {
       alert("Please provide a star rating.");
@@ -334,7 +361,7 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
     const title = document.getElementById(`${uniqueId}-title`).value.trim();
     const rating = document.getElementById(`${uniqueId}-rating`).value;
     const cliqueId = document.getElementById(`${uniqueId}-clique`).value;
-    const commentary = document.getElementById(`${uniqueId}-commentary`).value.trim();
+    const commentary = document.getElementById(`${uniqueId}-commentary`).innerText.trim();
 
     if (!title || !rating || !cliqueId) {
       alert("The fields title, rating, and clique are required.");
@@ -378,7 +405,7 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
     const uniqueId = `popup-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     const popupContent = `
-      <div>
+      <div style="font-family: 'Poppins', sans-serif;">
         <input type="text" id="${uniqueId}-title" class="form-control" placeholder="Title" required><br>
 
         <label>Rate this location:</label><br>
@@ -387,17 +414,17 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
         </div>
         <input type="hidden" id="${uniqueId}-rating"><br>
 
-        <label for="${uniqueId}-commentary">Your Review:</label><br>
-        <textarea id="${uniqueId}-commentary" rows="3" placeholder="Your review (optional)"></textarea><br>
+        <label>Your Review:</label><br>
+        <div id="${uniqueId}-commentary" class="review-editable" contenteditable="true" placeholder="Your review (optional)"></div><br>
 
         <label for="${uniqueId}-clique">Select Clique:</label><br>
-        <select id="${uniqueId}-clique" class="form-control" required>
+        <select id="${uniqueId}-clique" class="form-control" size="3" required>
           ${window.currentUserCliques.map(clique => `<option value="${clique.id}">${clique.name}</option>`).join('')}
         </select><br>
 
-        <button onclick="saveMarker(${lat}, ${lng}, '${uniqueId}')" class="btn btn-success">Save</button>
+        <button onclick="saveMarker(${lat}, ${lng}, '${uniqueId}')" class="btn btn-primary-small">Save</button>
         <button onclick="discardMarker()" class="btn btn-secondary">Discard</button>
-        <a href="/create-clique" class="btn btn-info" style="margin-top: 5px;">Create New Clique</a>
+        <a href="/create-clique" class="btn btn-info-small">Create New Clique</a>
       </div>
     `;
 
@@ -485,330 +512,4 @@ if (document.getElementById("map") && !window.disableUniversalMap) {
     // load map markers after DOM ready
     loadMarkers();
   });
-}
-
-// ===================
-// GLOBAL (ALL-PAGES) LOGIC
-// ===================
-function attachNotificationHandlers() {
-  // JOIN or REQUEST to join based on invite type
-  document.querySelectorAll(".join-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const notifId = button.getAttribute("data-id");
-
-      fetch("/get_notifications")
-        .then(res => res.json())
-        .then(data => {
-          const notif = data.notifications.find(n => n.id == notifId);
-          if (!notif) throw new Error("Notification not found");
-
-          const cliqueId = notif.clique_id;
-          const type = notif.type;
-
-          if (type === "invitation" || type === "invitation admin") {
-            // direct join
-            return fetch(`/join_clique/${cliqueId}`, { method: "POST" })
-              .then(res => res.json())
-              .then(data => {
-                alert(data.message || "Joined!");
-                return fetch(`/delete_notification/${notifId}`, { method: "POST" });
-              });
-          }
-
-          if (type === "invitation protected") {
-            // convert to protected join request
-            return fetch(`/request_join_protected/${cliqueId}`, { method: "POST" })
-              .then(res => res.json())
-              .then(data => {
-                alert(data.message || "Request sent to admin.");
-                return fetch(`/delete_notification/${notifId}`, { method: "POST" });
-              });
-          }
-
-          throw new Error("Unsupported notification type.");
-        })
-        .then(() => refreshNotificationList())
-        .catch(err => {
-          console.error("Join error:", err);
-          alert("Something went wrong while processing the invitation.");
-        });
-    });
-  });
-
-  // decline (for request to join protected)
-  document.querySelectorAll(".decline-request").forEach(button => {
-    button.addEventListener("click", () => {
-      const notifId = button.getAttribute("data-id");
-
-      const confirmed = confirm("Are you sure you want to decline this request?");
-      if (!confirmed) return;
-
-      fetch(`/delete_notification/${notifId}`, { method: "POST" })
-        .then(() => {
-          button.closest(".notification-item").remove();
-        });
-    });
-  });
-
-  // accept request to join protected
-  document.querySelectorAll(".accept-request").forEach(button => {
-    button.addEventListener("click", () => {
-      const notifId = button.getAttribute("data-id");
-      const cliqueId = button.getAttribute("data-clique");
-
-      fetch(`/accept_request/${notifId}/${cliqueId}`, { method: "POST" })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || "Request accepted.");
-          button.closest(".notification-item").remove();
-        });
-    });
-  });
-
-  // ignore for other notification types
-  document.querySelectorAll(".ignore-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const notifId = button.getAttribute("data-id");
-
-      fetch(`/delete_notification/${notifId}`, { method: "POST" })
-        .then(() => {
-          button.closest(".notification-item").remove();
-        });
-    });
-  });
-
-  // request to join from a protected invitation
-  document.querySelectorAll(".request-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const cliqueId = button.getAttribute("data-clique");
-      const notifId = button.getAttribute("data-id");
-
-      fetch(`/request_join_protected/${cliqueId}`, { method: "POST" })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || "Request sent.");
-          return fetch(`/delete_notification/${notifId}`, { method: "POST" });
-        })
-        .then(() => {
-          button.closest(".notification-item").remove();
-        });
-    });
-  });
-}
-
-function refreshNotificationList() {
-  const list = document.getElementById("notifications-list");
-  fetch("/get_notifications")
-    .then(res => res.json())
-    .then(data => {
-      list.innerHTML = "";
-
-    const bell = document.getElementById("notificationBell");
-    if (bell) {
-      const hasNotifications = data.notifications.length > 0;
-      const currentColor = getComputedStyle(bell).color;
-      const targetColor = hasNotifications ? "gold" : "gray";
-      bell.style.color = targetColor;
-    }
-    if (data.notifications.length === 0) {
-      list.innerHTML = "<div class='notification-item'>No notifications</div>";
-      return;
-    }
-
-      data.notifications.forEach(notif => {
-        const item = document.createElement("div");
-        item.className = "notification-item";
-        const type = notif.type;
-        const cliqueName = notif.clique_name;
-        const cliqueId = notif.clique_id;
-        let text = "";
-
-        if (type === "invitation") {
-          text = `Invited to join public clique <strong>${cliqueName}</strong>`;
-          item.innerHTML = `
-            ${text}
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-success join-btn" data-id="${notif.id}" data-clique="${cliqueId}">Join</button>
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Ignore</button>
-            </div>`;
-        } else if (type === "invitation admin") {
-          text = `Invited to join protected clique <strong>${cliqueName}</strong> (by admin)`;
-          item.innerHTML = `
-            ${text}
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-success join-btn" data-id="${notif.id}" data-clique="${cliqueId}">Join</button>
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Ignore</button>
-            </div>`;
-        } else if (type === "invitation protected") {
-          text = `Invited to join protected clique <strong>${cliqueName}</strong>`;
-          item.innerHTML = `
-            ${text}
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-warning request-btn" data-id="${notif.id}" data-clique="${cliqueId}">Request to Join</button>
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Ignore</button>
-            </div>`;
-        }
-        else if (type === "request to join protected") {
-          const requester = notif.requester_name || "A user";
-          text = `<strong>${requester}</strong> requested to join protected clique <strong>${cliqueName}</strong>`;
-          item.innerHTML = `
-            ${text}
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-success accept-request" data-id="${notif.id}" data-clique="${cliqueId}">Accept</button>
-              <button class="btn btn-sm btn-danger decline-request" data-id="${notif.id}">Decline</button>
-            </div>`;
-        }
-        else if (type === "ban") {
-          item.innerHTML = `
-            <div>You were banned from <strong>${cliqueName}</strong>.</div>
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Okay</button>
-            </div>
-          `;
-        } else if (type === "unban") {
-          item.innerHTML = `
-            <div>You were unbanned from <strong>${cliqueName}</strong>. You may now rejoin.</div>
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Okay</button>
-            </div>
-          `;
-        }
-        else if (type === "kick") {
-          item.innerHTML = `
-            <div>You were removed from <strong>${cliqueName}</strong>.</div>
-            <div class="notification-actions">
-              <button class="btn btn-sm btn-secondary ignore-btn" data-id="${notif.id}">Okay</button>
-            </div>
-          `;
-        }
-        else if (type === "invitation to become admin") {
-          text = `You've been invited to become the admin of <strong>${cliqueName}</strong>`;
-          item.innerHTML = `
-            ${text}
-            <div class="notification-actions">
-              <form method="POST" action="/accept_admin_invite/${notif.id}/${cliqueId}" style="display: inline;">
-                <button class="btn btn-sm btn-success">Accept</button>
-              </form>
-              <form method="POST" action="/decline_admin_invite/${notif.id}" style="display: inline;">
-                <button class="btn btn-sm btn-secondary">Decline</button>
-              </form>
-            </div>
-          `;
-        }
-        list.appendChild(item);
-      });
-
-      attachNotificationHandlers();  // rebind buttons
-    });
-}
-
-function setupSearchResultsJoinButtons() {
-  document.querySelectorAll(".search-join-btn").forEach(button => {
-    button.addEventListener("click", () => {
-      const cliqueId = button.getAttribute("data-clique-id");
-      fetch(`/join_clique/${cliqueId}`, {
-        method: "POST"
-      })
-      .then(res => res.json())
-      .then(data => {
-        alert(data.message || "Joined!");
-        button.textContent = "Joined";
-        button.classList.remove("btn-success");
-        button.classList.add("btn-secondary", "text-dark");
-        button.disabled = true;
-      })
-      .catch(err => {
-        console.error(err);
-        alert("Error joining clique.");
-      });
-    });
-  });
-
-    document.querySelectorAll(".search-request-btn").forEach(button => {
-      button.addEventListener("click", () => {
-        const cliqueId = button.getAttribute("data-clique-id");
-
-        fetch(`/request_join_protected/${cliqueId}`, {
-          method: "POST",
-          headers: {
-            "X-Requested-With": "XMLHttpRequest"
-          }
-        })
-        .then(res => res.json())
-        .then(data => {
-          alert(data.message || "Request sent to admin.");
-          button.textContent = "Requested";
-          button.classList.remove("btn-warning");
-          button.classList.add("btn-secondary", "text-dark");
-          button.disabled = true;
-        })
-        .catch(err => {
-          console.error(err);
-          alert("An error occurred while sending the request.");
-        });
-      });
-    });
-}
-
-
-function setupNotificationDropdown() {
-  const notifIcon = document.getElementById("notificationsDropdown");
-  const notifMenu = document.querySelector(".notifications-menu");
-
-  if (notifIcon && notifMenu) {
-    notifIcon.addEventListener("click", () => {
-      notifMenu.style.display = notifMenu.style.display === "block" ? "none" : "block";
-
-      if (notifMenu.style.display === "block") {
-        refreshNotificationList();
-      }
-    });
-  }
-}
-
-
-function setupReviewDeleteButtons() {
-  document.querySelectorAll(".delete-review-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const row = btn.closest("tr");
-      const reviewId = row.getAttribute("data-review-id");
-
-      // check with backend if this is the only review for the marker
-      fetch(`/check_review_solo/${reviewId}`)
-        .then(res => res.json())
-        .then(data => {
-          let confirmMsg = "Are you sure you want to delete this review?";
-          if (data.is_only) {
-            confirmMsg = "Deleting the only review for this marker will delete the location. Are you sure?";
-          }
-
-          if (confirm(confirmMsg)) {
-            fetch(`/delete-review/${reviewId}`, {
-              method: "POST"
-            })
-            .then(() => {
-              window.location.reload(); // refresh page to update table
-            })
-            .catch(err => {
-              alert("Failed to delete review.");
-              console.error(err);
-            });
-          }
-        });
-    });
-  });
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    setupNotificationDropdown();
-    setupSearchResultsJoinButtons();
-    setupReviewDeleteButtons();
-    refreshNotificationList();
-  });
-} else {
-  setupNotificationDropdown();
-  setupSearchResultsJoinButtons();
-  setupReviewDeleteButtons();
-  refreshNotificationList();
 }

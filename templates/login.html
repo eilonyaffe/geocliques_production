@@ -41,7 +41,7 @@
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    const map = L.map('map_login_register', {
+    const map = L.map('map_login_register', { // decorative, showing the map at the background
         zoomControl: false,
         attributionControl: false,
         dragging: false,
@@ -51,7 +51,7 @@
         keyboard: false,
         tap: false,
         touchZoom: false
-    }).setView([46.8523, 9.5257], 10);// Set view anywhere you want
+    }).setView([46.8523, 9.5257], 10);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       noWrap: true
